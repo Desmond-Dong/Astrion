@@ -62,7 +62,7 @@ class MicroWakeWord() : WakeWord {
         MicroWakeWordModel(
             id = id,
             model = load(),
-            probabilityCutoff = wakeWord.micro.probability_cutoff,
+            initialProbabilityCutoff = wakeWord.micro.probability_cutoff,
             slidingWindowSize = wakeWord.micro.sliding_window_size
         )
     }.onFailure {
