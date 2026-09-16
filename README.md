@@ -1,5 +1,7 @@
 # Astrion — ESPHome 遥控面板
 
+> **声明：本项目的全部代码均由 AI（Claude Code / ZCode 等编码代理）编写生成。**
+
 将 HA100 / Android 墙面板变成一台 **全功能智能家居遥控器 + 语音卫星**。
 
 ⚠️**Warning: This app is intended for 'static' local devices on a trusted network**⚠️
