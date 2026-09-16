@@ -6,6 +6,9 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import androidx.annotation.RequiresPermission
 import com.example.ava.esphome.microphone.Microphone
 import kotlinx.coroutines.flow.Flow
@@ -24,17 +27,26 @@ fun audioRecordMicrophoneFlow(
     audioManager: AudioManager,
     audioSource: Flow<Int> = flowOf(DEFAULT_AUDIO_SOURCE),
     audioMode: Flow<Int> = flowOf(DEFAULT_AUDIO_MODE),
-    useSpeakerphone: Flow<Boolean> = flowOf(false)
+    useSpeakerphone: Flow<Boolean> = flowOf(false),
+    noiseSuppression: Flow<Boolean> = flowOf(true),
+    echoCancellation: Flow<Boolean> = flowOf(true),
+    autoGain: Flow<Boolean> = flowOf(true)
 ): Flow<Microphone> = combine(
-    audioSource,
-    audioMode,
-    useSpeakerphone
-) { audioSource, audioMode, useSpeakerPhone ->
+    combine(audioSource, audioMode, useSpeakerphone) { source, mode, speaker ->
+        Triple(source, mode, speaker)
+    },
+    combine(noiseSuppression, echoCancellation, autoGain) { ns, aec, agc ->
+        Triple(ns, aec, agc)
+    }
+) { (source, mode, speaker), (ns, aec, agc) ->
     AudioRecordMicrophone(
         audioManager = audioManager,
-        audioSource = audioSource,
-        audioMode = audioMode,
-        useSpeakerphone = useSpeakerPhone
+        audioSource = source,
+        audioMode = mode,
+        useSpeakerphone = speaker,
+        enableNoiseSuppression = ns,
+        enableEchoCancellation = aec,
+        enableAutoGain = agc
     )
 }
 
@@ -43,6 +55,9 @@ class AudioRecordMicrophone(
     val audioSource: Int = DEFAULT_AUDIO_SOURCE,
     val audioMode: Int = DEFAULT_AUDIO_MODE,
     val useSpeakerphone: Boolean = false,
+    val enableNoiseSuppression: Boolean = true,
+    val enableEchoCancellation: Boolean = true,
+    val enableAutoGain: Boolean = true,
     val sampleRateInHz: Int = DEFAULT_SAMPLE_RATE_IN_HZ,
     val channelConfig: Int = DEFAULT_CHANNEL_CONFIG,
     val audioFormat: Int = DEFAULT_AUDIO_FORMAT
@@ -51,6 +66,9 @@ class AudioRecordMicrophone(
         AudioRecord.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat)
     private val buffer = ByteBuffer.allocateDirect(bufferSize)
     private var audioRecord: AudioRecord? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var gainControl: AutomaticGainControl? = null
 
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     override fun start() {
@@ -66,9 +84,48 @@ class AudioRecordMicrophone(
             bufferSize * 2
         ).apply {
             check(state == AudioRecord.STATE_INITIALIZED) { "Failed to initialize AudioRecord" }
+            setupAudioEffects()
             Timber.d("Starting microphone")
             startRecording()
         }
+    }
+
+    /**
+     * Attaches the device's hardware voice effects to the capture session
+     * (noise suppression / echo cancellation / auto gain). Support varies by
+     * device; each effect is best-effort and silently skipped when
+     * unavailable.
+     */
+    private fun AudioRecord.setupAudioEffects() {
+        val sessionId = audioSessionId
+        if (enableNoiseSuppression && NoiseSuppressor.isAvailable()) {
+            runCatching {
+                noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply { enabled = true }
+            }.onFailure { Timber.w(it, "Failed to create NoiseSuppressor") }
+        }
+        if (enableEchoCancellation && AcousticEchoCanceler.isAvailable()) {
+            runCatching {
+                echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
+            }.onFailure { Timber.w(it, "Failed to create AcousticEchoCanceler") }
+        }
+        if (enableAutoGain && AutomaticGainControl.isAvailable()) {
+            runCatching {
+                gainControl = AutomaticGainControl.create(sessionId)?.apply { enabled = true }
+            }.onFailure { Timber.w(it, "Failed to create AutomaticGainControl") }
+        }
+        Timber.d(
+            "Mic effects: NS=${noiseSuppressor != null}, AEC=${echoCanceler != null}, " +
+                "AGC=${gainControl != null}"
+        )
+    }
+
+    private fun releaseAudioEffects() {
+        runCatching { noiseSuppressor?.release() }
+        runCatching { echoCanceler?.release() }
+        runCatching { gainControl?.release() }
+        noiseSuppressor = null
+        echoCanceler = null
+        gainControl = null
     }
 
     override fun read(): ByteBuffer {
@@ -84,6 +141,7 @@ class AudioRecordMicrophone(
     }
 
     override fun stop() {
+        releaseAudioEffects()
         audioRecord?.let {
             it.release()
             audioRecord = null

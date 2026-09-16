@@ -73,6 +73,7 @@ class VoiceSatelliteService() : LifecycleService() {
         if (satellite != null) {
             Timber.d("Stopping voice satellite")
             satellite.close()
+            satelliteStateHolder.voiceAssistant = null
             voiceSatelliteNsd.getAndSet(null)?.unregister(this)
             wifiWakeLock.release()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -127,9 +128,12 @@ class VoiceSatelliteService() : LifecycleService() {
         )
         satelliteSettingsStore.ensureMacAddressIsSet()
         val settings = satelliteSettingsStore.get()
-        _voiceSatellite.value =
+        val satellite =
             deviceBuilder.buildVoiceSatellite(lifecycleScope.coroutineContext)
                 .apply { start() }
+        _voiceSatellite.value = satellite
+        // Exposed for the physical mic key push-to-talk (免唤醒对话).
+        satelliteStateHolder.voiceAssistant = satellite.voiceAssistant
         voiceSatelliteNsd.set(registerVoiceSatelliteNsd(settings))
         wifiWakeLock.acquire()
     }
@@ -148,6 +152,7 @@ class VoiceSatelliteService() : LifecycleService() {
                 if (_voiceSatellite.value != null) {
                     Timber.i("Panel config changed, rebuilding the ESPHome device")
                     _voiceSatellite.getAndUpdate { null }?.close()
+                    satelliteStateHolder.voiceAssistant = null
                     voiceSatelliteNsd.getAndSet(null)?.unregister(this@VoiceSatelliteService)
                     startSatellite()
                 }

@@ -38,12 +38,14 @@ class PhysicalKeyBus @Inject constructor() {
 }
 
 /**
- * Routes physical key presses: the topmost screen handler first (device pages
- * reuse keys as remote commands, §3.10.4 物理键语义), then the HA-configured
- * bindings ([KeyBindingExecutor], §3.10.5 快捷键).
+ * Routes physical key presses: the mic key starts a hands-free Assist
+ * conversation first (§3.10.1 语音键), then the topmost screen handler (device
+ * pages reuse keys as remote commands, §3.10.4 物理键语义), then the
+ * HA-configured bindings ([KeyBindingExecutor], §3.10.5 快捷键).
  */
 @Singleton
 class KeyRouter @Inject constructor(
+    private val satelliteStateHolder: SatelliteStateHolder,
     private val keyBindingExecutor: KeyBindingExecutor
 ) {
     private var handler: (suspend (KeyPress) -> Boolean)? = null
@@ -55,8 +57,22 @@ class KeyRouter @Inject constructor(
     /** @return true when the key was consumed. */
     suspend fun dispatch(press: KeyPress): Boolean {
         if (press.cancel) return true
+        // Physical mic/voice key: start an Assist pipeline without a wake
+        // word, on every screen, like the original voice dialog.
+        if (press.keyCode == KEY_VOICE_X9_HA10 || press.keyCode == KEY_VOICE_HA100) {
+            if (!press.longPress) {
+                satelliteStateHolder.voiceAssistant?.wakeAssistant()
+            }
+            return true
+        }
         if (handler?.invoke(press) == true) return true
         return keyBindingExecutor.handle(press)
+    }
+
+    private companion object {
+        /** Voice assistant keys per device model (§3.10.1). */
+        const val KEY_VOICE_X9_HA10 = 131
+        const val KEY_VOICE_HA100 = 133
     }
 }
 

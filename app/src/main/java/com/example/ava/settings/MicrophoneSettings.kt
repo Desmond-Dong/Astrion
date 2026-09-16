@@ -24,7 +24,13 @@ data class MicrophoneSettings(
     val secondWakeWord: String? = null,
     val stopWord: String = "stop",
     val customWakeWordLocation: String? = null,
-    val muted: Boolean = false
+    val muted: Boolean = false,
+    /**
+     * Wake word sensitivity (0.01..0.5), mapped onto the model probability
+     * cutoff as `cutoff = 1 - sensitivity`. `null` uses each model's own
+     * default cutoff.
+     */
+    val wakeWordSensitivity: Float? = null,
 )
 
 private val DEFAULT = MicrophoneSettings()
@@ -78,6 +84,15 @@ interface MicrophoneSettingsStore : SettingsStore<MicrophoneSettings> {
      */
     val muted: SettingState<Boolean>
         get() = setting(get = { muted }, set = { copy(muted = it) })
+
+    /**
+     * Wake word sensitivity; `null` means "use the model default cutoff".
+     */
+    val wakeWordSensitivity: SettingState<Float?>
+        get() = setting(
+            get = { wakeWordSensitivity },
+            set = { copy(wakeWordSensitivity = it) }
+        )
 
     /**
      * Helper property that allows getting and setting [wakeWord] and [secondWakeWord] as a list.

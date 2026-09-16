@@ -30,14 +30,23 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
 ## 语音卫星
 - 本地唤醒词（microWakeWord，最多两个模型 + 自定义模型目录）
 - 停止词、语音命令、播报与对话、计时器
-- 麦克风静音 / 唤醒音等均暴露为 ESPHome 实体，在 HA 中设置
+- **麦克风实体键免唤醒对话**：任何页面按下设备上的语音键（X9/HA10=131、
+  HA100=133）直接开始 Assist 对话；HA 侧 `wake_assistant` 按钮等价触发
+- 唤醒词/停止词/灵敏度/降噪全部是 ESPHome 实体，在 HA 中配置并即时生效：
+  - `wake_word` / `second_wake_word` / `stop_word`（select）
+  - `wake_word_sensitivity`（number，阈值 = 1 − 灵敏度）
+  - `audio_source` / `communication_mode` / `speakerphone` /
+    `noise_suppression` / `echo_cancellation` / `auto_gain`
+    （硬件降噪三件套挂载到采集 session，见 [音频处理](docs/AUDIO_PROCESSING.md)）
+- 外放（TTS/媒体）通过 `media_player` 实体，音量与静音在 HA 中调节
 
 # Setup
 - 安装并运行 App，服务自动启动（无任何 App 内设置）
 - Home Assistant → ESPHome 集成采纳设备（或手动 IP + 端口 6053）
 - 将布局 JSON 写入 `text.astrion_layout`，IR 码库写入 `text.astrion_ir_codes`，
   按键绑定写入 `text.astrion_key_bindings`
-- 详见 [配置指南](docs/HA_PANEL_SETUP.md)（含 JSON schema、按键码表、自动化示例）
+- 详见 [配置指南](docs/HA_PANEL_SETUP.md)（含 JSON schema、按键码表、自动化示例、
+  语音/降噪实体说明）
 
 # 构建
 push 到 master 自动触发 GitHub Actions：

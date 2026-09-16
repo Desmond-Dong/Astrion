@@ -167,8 +167,16 @@ data class IrCodebook(
     val devices: Map<String, Map<String, String>> = emptyMap(),
 ) {
     companion object {
+        /**
+         * Accepts both the direct map form `{"<device>": {"<button>": "<code>"}}`
+         * and the wrapped form `{"devices": {...}}`.
+         */
         fun fromJson(json: String): IrCodebook? = runCatching {
-            if (json.isBlank()) null else panelJson.decodeFromString<IrCodebook>(json)
+            if (json.isBlank()) return null
+            panelJson.decodeFromString<Map<String, Map<String, String>>>(json)
+                .takeIf { it.isNotEmpty() }
+                ?.let { IrCodebook(it) }
+                ?: panelJson.decodeFromString<IrCodebook>(json)
         }.getOrNull()
     }
 }

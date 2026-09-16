@@ -45,7 +45,7 @@ class TextEntityTest {
         entity.handleMessage(TextCommandRequest.newBuilder().apply {
             key = 7
             state = "{\"dev\": {\"POWER\": \"abc\"}}"
-        }.build()).first()
+        }.build()).toList()
 
         assertEquals(1, received.size)
         assertEquals("{\"dev\": {\"POWER\": \"abc\"}}", received[0])

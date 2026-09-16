@@ -22,15 +22,34 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `navigate` | select | A 型复位选择器：选房间名 → 面板跳到该房间页（300ms 后自动复位） |
 | `current_activity` | select | B 型持久选择器：镜像面板当前页面，供自动化读取 |
 | `reconnect_ha` | button | 触发面板重连 |
-| `media_player` | media_player | 语音卫星音频 |
+| `media_player` | media_player | 语音卫星音频（外放） |
 | `mute_microphone` | switch | 麦克风静音 |
 | `enable_wake_sound` / `repeat_timer_sound` | switch | 语音提示音 |
 | `wake_word` / `second_wake_word` / `stop_word` | select | 唤醒词/停止词选择（`second_wake_word` 选 `None` 表示不启用） |
+| `wake_word_sensitivity` | number | 唤醒词灵敏度 0.01–0.50（阈值 = 1 − 灵敏度，默认 0.03 即模型默认 0.97 阈值），运行时即时生效 |
+| `wake_assistant` | button | 远程触发一次免唤醒对话（等同按设备麦克风键） |
+| `audio_source` | select | 麦克风采集源：`voice_recognition`（默认，干净信号）/ `voice_communication`（系统级降噪+回声消除调音）等 |
+| `communication_mode` | switch | 通信模式（`MODE_IN_COMMUNICATION`，部分机型配合 voice_communication 源才启用降噪） |
+| `speakerphone` | switch | 免提路由 |
+| `noise_suppression` / `echo_cancellation` / `auto_gain` | switch | 硬件降噪/回声消除/自动增益（挂载到采集 session，设备不支持时自动跳过） |
 | `media_title` / `media_artist` | text_sensor | 面板媒体元数据 |
 | `<设备名>`（每个码库设备） | infrared | 直发原始时序（ESPHome infrared 服务） |
 | `<按键> (<设备名>)`（每个码库按键） | button | 单键红外发射 |
 
-## 2. 面板布局 `astrion_layout`
+## 3. 语音（麦克风 / 免唤醒 / 灵敏度 / 降噪）
+
+- **麦克风按键（免唤醒对话）**：设备上的语音键（X9/HA10=131，HA100=133）在
+  任何页面按下都会直接开始一次 Assist 对话，不需要唤醒词；松开语速说完即自动
+  结束。HA 侧的 `wake_assistant` 按钮等价触发。
+- **唤醒词**：`wake_word` / `second_wake_word` 选择模型，`wake_word_sensitivity`
+  调灵敏度（默认 0.03 = 模型默认阈值 0.97；调大更灵敏、误唤醒也会增多），即时生效。
+- **降噪与拾音调优**：默认开启硬件降噪/回声消除/自动增益（设备支持时自动挂载）。
+  嘈杂环境建议：`audio_source` 切到 `voice_communication` + 打开
+  `communication_mode`（部分机型必须组合使用）；安静环境用默认
+  `voice_recognition` 对唤醒词更友好。
+- **外放**：TTS/媒体通过 `media_player` 实体播报，音量/静音在 HA 中直接调节。
+
+## 4. 面板布局 `astrion_layout`
 
 写入 JSON 即生效；面板 UI、导航 select 选项、HA 状态订阅清单都会随之重建。
 
@@ -112,7 +131,7 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | switch / scene | `<domain>.turn_on / turn_off` |
 | media-player | `media_player.media_play_pause / media_next_track / volume_set …` |
 
-## 3. IR 码库 `astrion_ir_codes`
+## 5. IR 码库 `astrion_ir_codes`
 
 ```json
 {
@@ -135,7 +154,7 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 - 每个"设备"同时暴露一个 `infrared` 实体，HA 可直接 `infrared.transmit`
   原始时序（不打码库）。
 
-## 4. 物理按键绑定 `astrion_key_bindings`
+## 6. 物理按键绑定 `astrion_key_bindings`
 
 原快捷键体系（短按/长按 → 房间/设备页/服务），现在完全由 HA 下发：
 
@@ -165,7 +184,7 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | 164 | — | — | — | 静音 | 静音 | — | — |
 | 19-22 / 4 / 82 | — | — | — | 方向/BACK/菜单 | — | — | — |
 
-## 5. 配置下发自动化示例
+## 7. 配置下发自动化示例
 
 把布局放到 `input_text`（或模板 sensor）里，再自动同步到面板实体：
 
@@ -195,7 +214,7 @@ automation:
 
 > 注意：布局/码库/绑定是三份独立 JSON，建议各放一个 `input_text` 分别同步。
 
-## 6. 部署到设备（HA100）
+## 8. 部署到设备（HA100）
 
 GitHub Actions 每次 push 到 master 会构建 debug APK（artifact `Astrion-debug-apk`）。
 替换系统原装应用参见需求文档 §8.4（PMS 清理 + /system/priv-app 替换 + 重启）。

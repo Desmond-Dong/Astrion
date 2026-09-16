@@ -19,6 +19,9 @@ data class AudioProcessingSettings(
     val audioSource: Int = MediaRecorder.AudioSource.VOICE_RECOGNITION,
     val audioMode: Int = AudioManager.MODE_NORMAL,
     val speakerphone: Boolean = false,
+    val noiseSuppression: Boolean = true,
+    val echoCancellation: Boolean = true,
+    val autoGain: Boolean = true,
 )
 
 private val DEFAULT = AudioProcessingSettings()
@@ -50,4 +53,13 @@ interface AudioProcessingSettingsStore : SettingsStore<AudioProcessingSettings> 
 
     val speakerphone: SettingState<Boolean>
         get() = setting(get = { this.speakerphone }, set = { copy(speakerphone = it) })
+
+    val noiseSuppression: SettingState<Boolean>
+        get() = setting(get = { noiseSuppression }, set = { copy(noiseSuppression = it) })
+
+    val echoCancellation: SettingState<Boolean>
+        get() = setting(get = { echoCancellation }, set = { copy(echoCancellation = it) })
+
+    val autoGain: SettingState<Boolean>
+        get() = setting(get = { autoGain }, set = { copy(autoGain = it) })
 }

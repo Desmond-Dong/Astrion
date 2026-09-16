@@ -3,6 +3,7 @@ package com.example.ava.services
 import com.example.ava.esphome.Connected
 import com.example.ava.esphome.EspHomeState
 import com.example.ava.esphome.Stopped
+import com.example.ava.esphome.voiceassistant.VoiceAssistant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +21,12 @@ class SatelliteStateHolder @Inject constructor() {
 
     /** True once the device has handshaked with Home Assistant. */
     val isConnected: Boolean get() = _deviceState.value == Connected
+
+    /**
+     * The running voice assistant, used for the physical mic key push-to-talk
+     * (免唤醒对话): pressing it starts an Assist pipeline without a wake word.
+     */
+    var voiceAssistant: VoiceAssistant? = null
 
     fun set(state: EspHomeState) {
         _deviceState.value = state

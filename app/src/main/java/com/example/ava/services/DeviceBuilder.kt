@@ -2,6 +2,7 @@ package com.example.ava.services
 
 import android.content.Context
 import android.media.AudioManager
+import android.media.MediaRecorder
 import androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC
 import androidx.media3.common.C.AUDIO_CONTENT_TYPE_SPEECH
 import androidx.media3.common.C.USAGE_ASSISTANT
@@ -15,6 +16,7 @@ import com.example.ava.esphome.entities.ButtonEntity
 import com.example.ava.esphome.entities.Entity
 import com.example.ava.esphome.entities.InfraredEntity
 import com.example.ava.esphome.entities.MediaPlayerEntity
+import com.example.ava.esphome.entities.NumberEntity
 import com.example.ava.esphome.entities.SelectEntity
 import com.example.ava.esphome.entities.SwitchEntity
 import com.example.ava.esphome.entities.TextEntity
@@ -40,7 +42,9 @@ import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
@@ -70,6 +74,13 @@ class DeviceBuilder @Inject constructor(
         // Need a reference to voiceOutput as it needs to be passed to
         // both the VoiceAssistant and MediaPlayerEntity
         val voiceOutput = playerSettingsStore.toVoiceOutput()
+        val wakeWordDetector = MicroWakeWord()
+        val scope = CoroutineScope(coroutineContext + Job())
+        // Keep the runtime wake word sensitivity in sync with the HA number
+        // entity (cutoff = 1 - sensitivity; null restores model defaults).
+        microphoneSettingsStore.wakeWordSensitivity
+            .onEach { wakeWordDetector.setSensitivity(it) }
+            .launchIn(scope)
         // The reconnect button needs the device after it has been built.
         val deviceHolder = AtomicReference<EspHomeDevice?>(null)
         val device = EspHomeDevice(
@@ -87,11 +98,11 @@ class DeviceBuilder @Inject constructor(
             },
             voiceAssistant = VoiceAssistant(
                 coroutineContext = coroutineContext,
-                voiceInput = microphoneSettingsStore.toVoiceInput(),
+                voiceInput = microphoneSettingsStore.toVoiceInput(wakeWordDetector),
                 voiceOutput = voiceOutput
             ),
             logger = TimberLogger(),
-            entities = buildEntities(coroutineContext, voiceOutput, deviceHolder),
+            entities = buildEntities(coroutineContext, voiceOutput, deviceHolder, scope),
             haStatesStore = haStatesStore,
             getHaSyncedEntityIds = { panelConfigStore.syncEntities.first() },
             haActionBus = haActionBus
@@ -103,7 +114,8 @@ class DeviceBuilder @Inject constructor(
     private suspend fun buildEntities(
         coroutineContext: CoroutineContext,
         voiceOutput: VoiceOutputImpl,
-        deviceHolder: AtomicReference<EspHomeDevice?>
+        deviceHolder: AtomicReference<EspHomeDevice?>,
+        scope: CoroutineScope,
     ): List<Entity> {
         val keyAllocator = EntityKeyAllocator(0)
         val entities = mutableListOf<Entity>()
@@ -171,6 +183,73 @@ class DeviceBuilder @Inject constructor(
             initialState = micSettings.stopWord,
             onSelect = { microphoneSettingsStore.stopWord.set(it) }
         )
+        // Sensitivity maps to the microWakeWord probability cutoff as
+        // `cutoff = 1 - sensitivity`; the default 0.03 equals the stock 0.97.
+        entities += NumberEntity(
+            key = keyAllocator.next(),
+            name = "Wake Word Sensitivity",
+            objectId = "wake_word_sensitivity",
+            minValue = 0.01f,
+            maxValue = 0.5f,
+            step = 0.01f,
+            getState = microphoneSettingsStore.wakeWordSensitivity
+                .map { it ?: DEFAULT_WAKE_WORD_SENSITIVITY },
+            setState = { microphoneSettingsStore.wakeWordSensitivity.set(it) }
+        )
+
+        // Microphone capture tuning (noise suppression path). The audio source
+        // carries the device's built-in tuning; the hardware effects attach to
+        // the capture session when supported.
+        entities += SelectEntity(
+            key = keyAllocator.next(),
+            name = "Audio Source",
+            objectId = "audio_source",
+            options = AUDIO_SOURCE_OPTIONS.map { it.first },
+            initialState = AUDIO_SOURCE_OPTIONS
+                .firstOrNull { it.second == audioProcessingSettingsStore.get().audioSource }
+                ?.first ?: AUDIO_SOURCE_OPTIONS.first().first,
+            onSelect = { label ->
+                val source = AUDIO_SOURCE_OPTIONS
+                    .firstOrNull { it.first == label }?.second
+                    ?: return@SelectEntity
+                audioProcessingSettingsStore.audioSource.set(source)
+            }
+        )
+        entities += SwitchEntity(
+            key = keyAllocator.next(),
+            name = "Communication Mode",
+            objectId = "communication_mode",
+            getState = audioProcessingSettingsStore.audioMode
+                .map { it == AudioManager.MODE_IN_COMMUNICATION }
+        ) { enabled ->
+            audioProcessingSettingsStore.audioMode.set(
+                if (enabled) AudioManager.MODE_IN_COMMUNICATION else AudioManager.MODE_NORMAL
+            )
+        }
+        entities += SwitchEntity(
+            key = keyAllocator.next(),
+            name = "Speakerphone",
+            objectId = "speakerphone",
+            getState = audioProcessingSettingsStore.speakerphone
+        ) { audioProcessingSettingsStore.speakerphone.set(it) }
+        entities += SwitchEntity(
+            key = keyAllocator.next(),
+            name = "Noise Suppression",
+            objectId = "noise_suppression",
+            getState = audioProcessingSettingsStore.noiseSuppression
+        ) { audioProcessingSettingsStore.noiseSuppression.set(it) }
+        entities += SwitchEntity(
+            key = keyAllocator.next(),
+            name = "Echo Cancellation",
+            objectId = "echo_cancellation",
+            getState = audioProcessingSettingsStore.echoCancellation
+        ) { audioProcessingSettingsStore.echoCancellation.set(it) }
+        entities += SwitchEntity(
+            key = keyAllocator.next(),
+            name = "Auto Gain",
+            objectId = "auto_gain",
+            getState = audioProcessingSettingsStore.autoGain
+        ) { audioProcessingSettingsStore.autoGain.set(it) }
 
         // Media metadata text sensors (media cards)
         entities += TextSensorEntity(
@@ -194,7 +273,17 @@ class DeviceBuilder @Inject constructor(
         entities += buildIrEntities(keyAllocator)
 
         // Gateway/activity controls
-        entities += buildActivityEntities(coroutineContext, keyAllocator, deviceHolder)
+        entities += buildActivityEntities(scope, keyAllocator, deviceHolder)
+
+        entities += ButtonEntity(
+            key = keyAllocator.next(),
+            name = "Wake Assistant",
+            objectId = "wake_assistant",
+            onPress = {
+                Timber.d("Wake Assistant button pressed")
+                deviceHolder.get()?.voiceAssistant?.wakeAssistant()
+            }
+        )
 
         return entities
     }
@@ -268,7 +357,7 @@ class DeviceBuilder @Inject constructor(
     }
 
     private suspend fun buildActivityEntities(
-        coroutineContext: CoroutineContext,
+        scope: CoroutineScope,
         keyAllocator: EntityKeyAllocator,
         deviceHolder: AtomicReference<EspHomeDevice?>
     ): List<Entity> {
@@ -276,7 +365,6 @@ class DeviceBuilder @Inject constructor(
         val activityPages = (layout.rooms.map { it.title } + layout.pages)
             .filter { it.isNotBlank() }
             .distinct()
-        val scope = CoroutineScope(coroutineContext + Job())
         val initialPage = activityNavigator.currentPage.value
             .ifEmpty { activityPages.firstOrNull() ?: "" }
 
@@ -327,9 +415,11 @@ class DeviceBuilder @Inject constructor(
         )
     }
 
-    private fun MicrophoneSettingsStore.toVoiceInput() = VoiceInputImpl(
+    private fun MicrophoneSettingsStore.toVoiceInput(
+        wakeWord: MicroWakeWord
+    ) = VoiceInputImpl(
         microphone = audioProcessingSettingsStore.toMicrophone(),
-        wakeWord = MicroWakeWord(),
+        wakeWord = wakeWord,
         availableWakeWords = { get().availableWakeWords(context) },
         availableStopWords = { get().availableStopWords(context) },
         activeWakeWords = activeWakeWords,
@@ -341,7 +431,10 @@ class DeviceBuilder @Inject constructor(
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager,
         audioSource = audioSource,
         audioMode = audioMode,
-        useSpeakerphone = speakerphone
+        useSpeakerphone = speakerphone,
+        noiseSuppression = noiseSuppression,
+        echoCancellation = echoCancellation,
+        autoGain = autoGain
     )
 
     private suspend fun PlayerSettingsStore.toVoiceOutput(): VoiceOutputImpl {
@@ -384,6 +477,19 @@ class DeviceBuilder @Inject constructor(
 
         /** "No second wake word" option of the second wake word select. */
         const val WAKE_WORD_NONE = "None"
+
+        /** Default wake word sensitivity, equal to the stock 0.97 cutoff. */
+        const val DEFAULT_WAKE_WORD_SENSITIVITY = 0.03f
+
+        /** Android audio source options exposed to Home Assistant. */
+        val AUDIO_SOURCE_OPTIONS = listOf(
+            "voice_recognition" to MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            "voice_communication" to MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            "mic" to MediaRecorder.AudioSource.MIC,
+            "camcorder" to MediaRecorder.AudioSource.CAMCORDER,
+            "unprocessed" to MediaRecorder.AudioSource.UNPROCESSED,
+            "voice_performance" to MediaRecorder.AudioSource.VOICE_PERFORMANCE,
+        )
     }
 }
 

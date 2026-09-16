@@ -7,9 +7,15 @@ import java.nio.ByteBuffer
 class MicroWakeWordModel(
     val id: String,
     model: ByteBuffer,
-    private val probabilityCutoff: Float,
+    initialProbabilityCutoff: Float,
     private val slidingWindowSize: Int
 ) : AutoCloseable {
+    /** Detection threshold: the sliding window probability must exceed it. */
+    var probabilityCutoff: Float = initialProbabilityCutoff
+
+    /** The cutoff from the model definition, restored when sensitivity resets. */
+    val defaultProbabilityCutoff: Float = initialProbabilityCutoff
+
     private val interpreter: Interpreter = Interpreter(model)
     private val inputTensorBuffer: TensorBuffer
     private val outputScale: Float

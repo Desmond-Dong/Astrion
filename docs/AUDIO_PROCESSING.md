@@ -1,73 +1,75 @@
-# Audio Processing
+# 音频处理（Audio Processing）
 
-Many Android devices have some built in support for microphone audio processing that can for example take advantage of
-hardware acoustic echo cancellation and noise suppression. Astrion exposes a few advanced audio processing settings that can be used to tune the microphone processing for specific devices and use-cases.
+许多 Android 设备内置了硬件音频处理能力（回声消除、噪声抑制、自动增益）。
+Astrion 把这些能力全部暴露为 **ESPHome 实体**，全部在 Home Assistant 里配置，
+App 内没有任何设置界面。
 
 > [!NOTE]
-> The exact implementation and support for audio processing varies widely between manufacturers and devices. Some experimentation will be required for specific devices and use-cases.
+> 具体实现与支持程度因厂商/设备差异很大，不同场景需要实验调优。
 
 > [!TIP]
-> Home Assistant can be configured to create debug recordings of voice commands to help troubleshoot microphone audio.
-> 
-> Add the following lines to the Home Assistant configuration file (where **/share/assist_pipeline** is the directory where the recordings will be saved):
+> 可以让 Home Assistant 保存语音命令的调试录音来排查麦克风问题。
+> 在 HA 配置文件中加入（**/share/assist_pipeline** 为保存目录）：
+>
+> ```yaml
+> assist_pipeline:
+>   debug_recording_dir: /share/assist_pipeline
+> ```
 
-```yaml
-assist_pipeline:
-  debug_recording_dir: /share/assist_pipeline
-```
+## 相关实体
 
-## Microphone source:
+| 实体 | 类型 | 说明 |
+|---|---|---|
+| `audio_source` | select | Android 采集源（决定物理麦克风与系统调音） |
+| `communication_mode` | switch | 通信模式（`MODE_IN_COMMUNICATION`） |
+| `speakerphone` | switch | 免提路由 |
+| `noise_suppression` | switch | 硬件噪声抑制（挂载到采集 session，设备不支持时自动跳过） |
+| `echo_cancellation` | switch | 硬件回声消除（同上） |
+| `auto_gain` | switch | 硬件自动增益（同上） |
+| `wake_word_sensitivity` | number | 唤醒词灵敏度 0.01–0.50（阈值 = 1 − 灵敏度），即时生效 |
 
-A microphone source in Android defines both the physical microphone that will be used for capture and the effects and tuning that
-will be applied to the captured audio. The exact implementation of each microphone source is device specific but a general outline
-is provided below.
+修改音频设置后面板会自动以新配置重启采集，无需重启 App。
 
-- **Voice Recognition (Default)**: Tuned for use with voice assistants, it generally provides a clean, unprocessed signal for accurate wake word detection and speech-to-text in quiet environments.
-  - *Downside:* It doesn't block background noise or perform echo cancellation very well, if at all.
+## 采集源（audio_source）
 
-- **Voice Communication**: Tuned for voice calls and chat, often applies echo cancellation and noise-suppression tuned for speech. May improve performance in noisier environments.
-  - *Note:* On some devices (like Samsung phones), you must also turn on **Communication mode** for this to work correctly.
+采集源决定了使用的物理麦克风以及系统叠加的调音/效果，各机型实现不同，通用规律：
 
-- **Mic**: General use microphone source, may apply automatic gain control and some noise suppression if available, but will pickup background noise.
+- **Voice Recognition（默认）**：为语音助手调优，信号干净，安静环境下唤醒词
+  识别与语音转文字效果最好。
+  - *缺点：*几乎不抑制背景噪声，回声消除效果差。
+- **Voice Communication**：为通话调优，通常自带针对语音的回声消除与噪声抑制，
+  嘈杂环境表现更好。
+  - *注意：*部分机型（如三星）必须同时开启 **Communication mode** 才生效。
+- **Mic**：通用采集，可能有自动增益和轻度降噪，但会拾取背景噪声。
+- **Camcorder**：为摄像收音调优，常使用朝向摄像头的麦克风，风噪抑制较好。
+- **Unprocessed**：原始未处理音频，部分设备不可用，不可用时行为同 Mic。
 
-- **Camcorder**: Tuned for capturing audio with video, will often use the microphone facing the same direction as the camera, and may use noise suppression tuned for e.g. wind noise, but otherwise will pickup background noise.
+## Communication mode（通信模式）
 
-- **Default**: Device specific, but often equivalent to the Mic source.
-
-- **Unprocessed**: Tuned for unprocessed (raw) audio, but may not be available on all devices, behaves like Default otherwise.
-
-## Communication mode:
-Enables **Communication mode**, an Android audio mode tuned for live voice chat, potentially taking advantage of echo cancellation and noise suppression if available.
-However audio may be routed through the device's earpiece, negatively impacting audio quality and volume.
-
-- Default: **Off**
+为实时语音聊天调优的 Android 音频模式，可启用回声消除与噪声抑制；
+但音频可能被路由到听筒，影响音质与音量。默认**关**。
 
 > [!NOTE]
-> This may be required on some devices when using the **Voice Communication** audio source to take advantage of echo cancellation and noise suppression.
+> 某些机型上 **Voice Communication** 采集源必须配合通信模式才能启用回声消除与降噪。
 
-## Speakerphone:
+## Speakerphone（免提）
 
-If using **Communication** mode, turning on Speakerphone may be required to boost mic gain and audio volume to allow use from further away.
+使用通信模式时，开启免提可能提升麦克风增益与音量，适合远场使用。
 
 > [!NOTE]
-> While Speakerphone makes the device louder, it might use the smaller speaker at the bottom of your phone, which can decrease audio playback quality.
+> 免提让设备更响的同时可能使用机身底部的小扬声器，播放音质会下降。
 
-## Recommendations
+## 推荐配置
 
-### Default:
-Provides good voice recognition and audio quality in quiet environments.
-- Source: **Voice recognition**
-- Communication mode: **Off**
-- Speakerphone: **Off**
+### 安静环境（默认）
+拾音与音质均衡：
+- `audio_source`: **voice_recognition**
+- `communication_mode`: **关**
+- `speakerphone`: **关**
+- `noise_suppression` / `echo_cancellation` / `auto_gain`: **开**
 
-### Noisier environments:
-To improve performance in noisier environments, including to allow use whilst the device is playing media, experiment with variations of the settings below.
-The exact requirements are device dependent.
-
-First try setting
-- Source: **Voice communication**
-
-If that doesn't help try additionally setting the mode (and possibly speakerphone)
-- Communication mode: **On**
-- Speakerphone: **On** (if volume becomes very low)
-
+### 嘈杂环境（含面板自身正在外放媒体时）
+按顺序实验（具体组合因设备而异）：
+1. `audio_source`: **voice_communication**
+2. 无改善则追加 `communication_mode`: **开**
+3. 音量变得很小再加 `speakerphone`: **开**

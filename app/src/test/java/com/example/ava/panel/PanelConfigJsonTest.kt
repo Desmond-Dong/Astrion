@@ -94,7 +94,7 @@ class PanelConfigJsonTest {
         val json = """
         {
           "小米电视": {"POWER": "38000,9000,4500,560,560", "MUTE": "sGipAA=="},
-          "机顶盒": {"POWER": "JgBMACHgAA==", "VOL+": "bGlpAA=="}
+          "机顶盒": {"POWER": "JgBMACHgERAQERAAHQAA", "VOL+": "bGlpAA=="}
         }
         """.trimIndent()
 
@@ -107,6 +107,17 @@ class PanelConfigJsonTest {
             codebook.devices["小米电视"]?.get("POWER")
         )
         assertEquals("bGlpAA==", codebook.devices["机顶盒"]?.get("VOL+"))
+    }
+
+    @Test
+    fun `ir codebook also accepts the wrapped devices form`() {
+        val json = """{"devices": {"功放": {"MUTE": "sGipAA=="}}}"""
+
+        val codebook = IrCodebook.fromJson(json)
+
+        assertNotNull(codebook)
+        assertEquals(1, codebook.devices.size)
+        assertEquals("sGipAA==", codebook.devices["功放"]?.get("MUTE"))
     }
 
     @Test
