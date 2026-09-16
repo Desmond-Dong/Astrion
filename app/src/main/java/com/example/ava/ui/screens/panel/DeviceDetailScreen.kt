@@ -489,8 +489,23 @@ private fun LightContent(
     viewModel: DeviceDetailViewModel,
 ) {
     val state = stateOf(card, haStates) ?: "off"
+    val isOn = state == "on"
+
+    // 能力联动 (§3.10.4 ⑧⑨⑩): what the entity supports decides what shows —
+    // color temp / color controls appear only when the light supports them.
+    val supportedModes = stateOf(card, haStates, "supported_color_modes") ?: ""
+    val supportsColorTemp = supportedModes.contains("color_temp")
+    val supportsColor = listOf("hs", "rgb", "rgbw", "rgbww", "xy").any { supportedModes.contains(it) }
+    val kelvinNow = stateOf(card, haStates, "color_temp_kelvin")?.toFloatOrNull()
+    val minKelvin = stateOf(card, haStates, "min_color_temp_kelvin")?.toFloatOrNull() ?: 2000f
+    val maxKelvin = stateOf(card, haStates, "max_color_temp_kelvin")?.toFloatOrNull() ?: 6500f
+
     val brightness = stateOf(card, haStates, "brightness")?.toFloatOrNull()?.div(2.55f) ?: 0f
     var sliderValue by remember(brightness) { mutableStateOf(brightness) }
+    var kelvin by remember(minKelvin, maxKelvin, kelvinNow) {
+        mutableStateOf(kelvinNow ?: ((minKelvin + maxKelvin) / 2f))
+    }
+    var hue by remember { mutableStateOf(0f) }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -500,10 +515,8 @@ private fun LightContent(
             Text("电源", color = RemoteColors.onSurface, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
             Switch(
-                checked = state == "on",
-                onCheckedChange = { on ->
-                    if (on) viewModel.lightOn() else viewModel.lightOff()
-                }
+                checked = isOn,
+                onCheckedChange = { on -> if (on) viewModel.lightOn() else viewModel.lightOff() }
             )
         }
 
@@ -519,31 +532,58 @@ private fun LightContent(
                 onValueChangeFinished = {
                     viewModel.lightOn(brightnessPct = sliderValue.toInt())
                 },
-                enabled = state == "on",
+                enabled = isOn,
                 valueRange = 0f..100f
             )
         }
 
-        Column {
-            Text(
-                text = "色温",
-                color = RemoteColors.onSurface,
-                fontSize = 15.sp
-            )
-            var kelvin by remember { mutableStateOf(4000f) }
-            Slider(
-                value = kelvin,
-                onValueChange = { kelvin = it },
-                onValueChangeFinished = {
-                    viewModel.lightOn(kelvin = kelvin.toInt())
-                },
-                enabled = state == "on",
-                valueRange = 2000f..6500f
-            )
-            Row {
-                Text("暖 2000K", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
-                Spacer(Modifier.weight(1f))
-                Text("冷 6500K", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
+        if (supportsColorTemp) {
+            Column {
+                Text(
+                    text = "色温 ${kelvin.toInt()}K",
+                    color = RemoteColors.onSurface,
+                    fontSize = 15.sp
+                )
+                Slider(
+                    value = kelvin,
+                    onValueChange = { kelvin = it },
+                    onValueChangeFinished = {
+                        viewModel.lightOn(kelvin = kelvin.toInt())
+                    },
+                    enabled = isOn,
+                    valueRange = minKelvin..maxKelvin
+                )
+                Row {
+                    Text("暖 ${minKelvin.toInt()}K", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
+                    Spacer(Modifier.weight(1f))
+                    Text("冷 ${maxKelvin.toInt()}K", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+        }
+
+        if (supportsColor) {
+            Column {
+                Text(
+                    text = "颜色 (色相 ${hue.toInt()}°)",
+                    color = RemoteColors.onSurface,
+                    fontSize = 15.sp
+                )
+                Slider(
+                    value = hue,
+                    onValueChange = { hue = it },
+                    onValueChangeFinished = {
+                        val rgb = android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f))
+                        viewModel.lightOn(
+                            rgb = listOf(
+                                android.graphics.Color.red(rgb),
+                                android.graphics.Color.green(rgb),
+                                android.graphics.Color.blue(rgb)
+                            )
+                        )
+                    },
+                    enabled = isOn,
+                    valueRange = 0f..360f
+                )
             }
         }
     }

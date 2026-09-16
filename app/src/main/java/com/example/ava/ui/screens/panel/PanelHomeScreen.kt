@@ -58,6 +58,7 @@ import com.example.ava.ui.DeviceDetail
 import com.example.ava.ui.theme.RemoteBackground
 import com.example.ava.ui.theme.RemoteColors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
@@ -68,14 +69,20 @@ class PanelViewModel @Inject constructor(
     haStatesStore: HomeAssistantStatesStore,
     private val activityNavigator: ActivityNavigator,
     satelliteStateHolder: SatelliteStateHolder,
+    private val microphoneSettingsStore: com.example.ava.settings.MicrophoneSettingsStore,
 ) : ViewModel() {
     val layout = panelConfigStore.layout
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PanelLayout())
     val haStates = haStatesStore.states
     val currentPage = activityNavigator.currentPage
     val deviceState = satelliteStateHolder.deviceState
+    val micMuted = microphoneSettingsStore.muted
 
     fun selectRoom(title: String) = activityNavigator.setPage(title)
+
+    fun setMicMuted(muted: Boolean) {
+        viewModelScope.launch { micMuted.set(muted) }
+    }
 }
 
 /** Maps a card type to its icon resource (§4 aiks-* card icons). */
@@ -153,6 +160,7 @@ fun PanelHomeScreen(
     val haStates by viewModel.haStates.collectAsStateWithLifecycle()
     val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
     val deviceState by viewModel.deviceState.collectAsStateWithLifecycle()
+    val micMuted by viewModel.micMuted.collectAsStateWithLifecycle(initial = false)
 
     val rooms = remember(layout) { layout.rooms }
 
@@ -169,7 +177,22 @@ fun PanelHomeScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(RemoteBackground)) {
+    var quickSettingsOpen by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RemoteBackground)
+            .topEdgeSwipeToOpen(enabled = !quickSettingsOpen) { quickSettingsOpen = true }
+    ) {
+        if (quickSettingsOpen) {
+            QuickSettingsPanel(
+                connected = deviceState == Connected,
+                micMuted = micMuted,
+                onMicMutedChanged = { viewModel.setMicMuted(it) },
+                onDismiss = { quickSettingsOpen = false }
+            )
+        }
         Column(modifier = Modifier.fillMaxSize()) {
             RoomTopBar(
                 roomTitle = rooms.getOrNull(pagerState.currentPage)?.title,

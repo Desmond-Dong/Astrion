@@ -105,7 +105,24 @@ class PanelConfigStore @Inject constructor(
      * layout (`sync_entities`). `entity.attribute` entries are preserved for
      * attribute-level subscriptions.
      */
-    val syncEntities: Flow<List<String>> = layout.map { it.syncEntities }
+    val syncEntities: Flow<List<String>> = layout.map { l ->
+        val expanded = l.syncEntities.toMutableList()
+        // Light capability attributes (调色温/颜色/亮度联动) are subscribed
+        // automatically for every plain light entity in the list.
+        l.syncEntities.forEach { entry ->
+            val tail = entry.substringAfter('.', "")
+            if (entry.startsWith("light.") && tail.isNotBlank() && !tail.contains('.')) {
+                expanded += listOf(
+                    "$entry.supported_color_modes",
+                    "$entry.color_temp_kelvin",
+                    "$entry.min_color_temp_kelvin",
+                    "$entry.max_color_temp_kelvin",
+                    "$entry.brightness"
+                )
+            }
+        }
+        expanded.distinct()
+    }
 
     /**
      * Applies layout configuration received from Home Assistant: full JSON or

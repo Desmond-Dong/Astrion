@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.io.IOException
 import java.nio.channels.AsynchronousSocketChannel
@@ -16,13 +17,21 @@ class ClientConnection(socket: AsynchronousSocketChannel) : AutoCloseable {
     private val channel = AsynchronousCodedChannel(socket)
     private val sendMutex = Mutex()
 
-    fun readMessages() =
+    /**
+     * Reads messages, closing the connection when no message arrives within
+     * [idleTimeoutMs]. Home Assistant pings well within this window; a
+     * half-open/zombie connection (e.g. HA restarted without closing the
+     * socket) is dropped so the accept loop can serve reconnects.
+     */
+    fun readMessages(idleTimeoutMs: Long = DEFAULT_IDLE_TIMEOUT_MS) =
         flow {
             while (true) {
-                emit(channel.readMessage())
+                val message = withTimeoutOrNull(idleTimeoutMs) { channel.readMessage() }
+                    ?: throw IdleTimeoutException(idleTimeoutMs)
+                emit(message)
             }
         }.catch {
-            if (it !is IOException) throw it
+            if (it !is IOException && it !is IdleTimeoutException) throw it
             // Exception is expected if client was manually closed
             if (!isClosed.get())
                 Timber.e(it, "Error reading from socket")
@@ -44,5 +53,16 @@ class ClientConnection(socket: AsynchronousSocketChannel) : AutoCloseable {
     override fun close() {
         if (isClosed.compareAndSet(false, true))
             channel.close()
+    }
+
+    class IdleTimeoutException(val idleTimeoutMs: Long) :
+        IllegalStateException("No message received within ${idleTimeoutMs}ms")
+
+    companion object {
+        /**
+         * Home Assistant pings its connections frequently; 2 minutes without a
+         * single inbound message means the peer is gone.
+         */
+        const val DEFAULT_IDLE_TIMEOUT_MS = 120_000L
     }
 }
