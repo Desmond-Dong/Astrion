@@ -168,16 +168,19 @@ data class IrCodebook(
 ) {
     companion object {
         /**
-         * Accepts both the direct map form `{"<device>": {"<button>": "<code>"}}`
-         * and the wrapped form `{"devices": {...}}`.
+         * Accepts the direct map form `{"<device>": {"<button>": "<code>"}}`.
+         * A top-level object whose only key is `devices` is treated as the
+         * wrapped form `{"devices": {...}}`.
          */
         fun fromJson(json: String): IrCodebook? = runCatching {
             if (json.isBlank()) return null
-            panelJson.decodeFromString<Map<String, Map<String, String>>>(json)
-                .takeIf { it.isNotEmpty() }
-                ?.let { IrCodebook(it) }
-                ?: panelJson.decodeFromString<IrCodebook>(json)
+            val direct = panelJson.decodeFromString<Map<String, Map<String, String>>>(json)
+            if (direct.keys == WRAPPED_KEYS) IrCodebook(direct.getValue(WRAPPED_KEY))
+            else IrCodebook(direct)
         }.getOrNull()
+
+        private const val WRAPPED_KEY = "devices"
+        private val WRAPPED_KEYS = setOf(WRAPPED_KEY)
     }
 }
 
