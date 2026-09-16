@@ -205,44 +205,10 @@ class DeviceBuilder @Inject constructor(
             setState = { microphoneSettingsStore.wakeWordSensitivity.set(it) }
         )
 
-        // Microphone capture tuning (noise suppression path). The audio source
-        // carries the device's built-in tuning; the hardware effects attach to
-        // the capture session when supported.
-        entities += SelectEntity(
-            key = keyAllocator.next(),
-            name = "Audio Source",
-            objectId = "audio_source",
-            options = AUDIO_SOURCE_OPTIONS.map { it.first },
-            initialState = AUDIO_SOURCE_OPTIONS
-                .firstOrNull { it.second == audioProcessingSettingsStore.get().audioSource }
-                ?.first ?: AUDIO_SOURCE_OPTIONS.first().first,
-            disabledByDefault = true,
-            onSelect = { label ->
-                val source = AUDIO_SOURCE_OPTIONS
-                    .firstOrNull { it.first == label }?.second
-                    ?: return@SelectEntity
-                audioProcessingSettingsStore.audioSource.set(source)
-            }
-        )
-        entities += SwitchEntity(
-            key = keyAllocator.next(),
-            name = "Communication Mode",
-            objectId = "communication_mode",
-            disabledByDefault = true,
-            getState = audioProcessingSettingsStore.audioMode
-                .map { it == AudioManager.MODE_IN_COMMUNICATION }
-        ) { enabled ->
-            audioProcessingSettingsStore.audioMode.set(
-                if (enabled) AudioManager.MODE_IN_COMMUNICATION else AudioManager.MODE_NORMAL
-            )
-        }
-        entities += SwitchEntity(
-            key = keyAllocator.next(),
-            name = "Speakerphone",
-            objectId = "speakerphone",
-            disabledByDefault = true,
-            getState = audioProcessingSettingsStore.speakerphone
-        ) { audioProcessingSettingsStore.speakerphone.set(it) }
+        // Microphone capture: built-in mic on the platform default voice
+        // recognition source, like the original app — no source selection.
+        // Noise suppression / echo cancellation / auto gain remain
+        // individually switchable from Home Assistant.
         entities += SwitchEntity(
             key = keyAllocator.next(),
             name = "Noise Suppression",
@@ -557,9 +523,8 @@ class DeviceBuilder @Inject constructor(
 
     private fun AudioProcessingSettingsStore.toMicrophone() = audioRecordMicrophoneFlow(
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager,
-        audioSource = audioSource,
-        audioMode = audioMode,
-        useSpeakerphone = speakerphone,
+        // Built-in microphone, platform default voice recognition source —
+        // exactly what the original app used (no source selection).
         noiseSuppression = noiseSuppression,
         echoCancellation = echoCancellation,
         autoGain = autoGain
@@ -609,22 +574,6 @@ class DeviceBuilder @Inject constructor(
         /** Default wake word sensitivity, equal to the stock 0.97 cutoff. */
         const val DEFAULT_WAKE_WORD_SENSITIVITY = 0.03f
 
-        /** Android audio source options exposed to Home Assistant. Sources
-         * introduced in newer API levels are only offered where supported —
-         * selecting an unsupported source would crash the mic (defended in
-         * AudioRecordMicrophone, but better not to offer it at all). */
-        val AUDIO_SOURCE_OPTIONS: List<Pair<String, Int>>
-            get() = buildList {
-                add("voice_recognition" to MediaRecorder.AudioSource.VOICE_RECOGNITION)
-                add("voice_communication" to MediaRecorder.AudioSource.VOICE_COMMUNICATION)
-                add("mic" to MediaRecorder.AudioSource.MIC)
-                add("camcorder" to MediaRecorder.AudioSource.CAMCORDER)
-                if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    add("voice_performance" to MediaRecorder.AudioSource.VOICE_PERFORMANCE)
-                }
-                if (android.os.Build.VERSION.SDK_INT >= 30) {
-                    add("unprocessed" to MediaRecorder.AudioSource.UNPROCESSED)
-                }
             }
     }
 }

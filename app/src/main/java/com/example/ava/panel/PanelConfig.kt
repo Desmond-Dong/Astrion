@@ -324,20 +324,38 @@ data class IrCodebook(
 ) {
     companion object {
         /**
-         * Accepts the direct map form `{"<device>": {"<button>": "<code>"}}`.
-         * A top-level object whose only key is `devices` is treated as the
-         * wrapped form `{"devices": {...}}`.
+         * Accepts the direct map form `{"<device>": {"<button>": "<code>"}}`
+         * (a top-level object whose only key is `devices` is unwrapped), or a
+         * plain one-line-per-button form that needs no JSON:
+         *
+         * ```
+         * # 注释
+         * 小米电视 | POWER=38000,9000,4500,560,560
+         * 小米电视 | MUTE=sGipAA==
+         * 机顶盒 | POWER=JgBMACHgERAQERAAHQAA
+         * ```
+         *
+         * The code string may contain any characters except a newline.
          */
-        fun fromJson(json: String): IrCodebook? = runCatching {
-            if (json.isBlank()) return null
-            val element = panelJson.parseToJsonElement(json)
-            val obj = element.jsonObject
-            val target = if (obj.keys == WRAPPED_KEYS) obj.getValue(WRAPPED_KEY) else element
-            IrCodebook(panelJson.decodeFromJsonElement(target))
-        }.getOrNull()
-
-        private const val WRAPPED_KEY = "devices"
-        private val WRAPPED_KEYS = setOf(WRAPPED_KEY)
+        fun parseFlexible(text: String): IrCodebook? {
+            if (text.isBlank()) return null
+            if (text.trimStart().startsWith("{")) return fromJson(text)
+            return runCatching {
+                val devices = mutableMapOf<String, MutableMap<String, String>>()
+                for (rawLine in text.lines()) {
+                    val line = rawLine.trim()
+                    if (line.isEmpty() || line.startsWith("#") || !line.contains('=')) continue
+                    val device = line.substringBefore('|').trim()
+                    val rest = line.substringAfter('|', "").trim()
+                    if (device.isEmpty() || !rest.contains('=')) continue
+                    val button = rest.substringBefore('=').trim()
+                    val code = rest.substringAfter('=').trim()
+                    if (button.isEmpty() || code.isEmpty()) continue
+                    devices.getOrPut(device) { mutableMapOf() }[button] = code
+                }
+                if (devices.isEmpty()) null else IrCodebook(devices)
+            }.getOrNull()
+        }
     }
 }
 

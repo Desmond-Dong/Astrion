@@ -34,10 +34,7 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `wake_word` / `second_wake_word` / `stop_word` | select | 唤醒词/停止词选择（`second_wake_word` 选 `None` 表示不启用） |
 | `wake_word_sensitivity` | number | 唤醒词灵敏度 0.01–0.50（阈值 = 1 − 灵敏度，默认 0.03 即模型默认 0.97 阈值），运行时即时生效 |
 | `wake_assistant` | button | 远程触发一次免唤醒对话（等同按设备麦克风键） |
-| `audio_source` | select | 麦克风采集源：`voice_recognition`（默认，干净信号）/ `voice_communication`（系统级降噪+回声消除调音）等 |
-| `communication_mode` | switch | 通信模式（`MODE_IN_COMMUNICATION`，部分机型配合 voice_communication 源才启用降噪） |
-| `speakerphone` | switch | 免提路由 |
-| `noise_suppression` / `echo_cancellation` / `auto_gain` | switch | 硬件降噪/回声消除/自动增益（挂载到采集 session，设备不支持时自动跳过） |
+| `noise_suppression` / `echo_cancellation` / `auto_gain` | switch ☰ | 硬件降噪/回声消除/自动增益（机带麦克风，挂载到采集 session，设备不支持时自动跳过）。麦克风固定为机带默认源，语音固定外放，无需选择 |
 | `media_title` / `media_artist` | text_sensor | 面板媒体元数据 |
 | `<设备名>`（每个码库设备） | infrared | 直发原始时序（ESPHome infrared 服务） |
 | `<按键> (<设备名>)`（每个码库按键） | button | 单键红外发射 |
@@ -57,11 +54,10 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
   结束。HA 侧的 `wake_assistant` 按钮等价触发。
 - **唤醒词**：`wake_word` / `second_wake_word` 选择模型，`wake_word_sensitivity`
   调灵敏度（默认 0.03 = 模型默认阈值 0.97；调大更灵敏、误唤醒也会增多），即时生效。
-- **降噪与拾音调优**：默认开启硬件降噪/回声消除/自动增益（设备支持时自动挂载）。
-  嘈杂环境建议：`audio_source` 切到 `voice_communication` + 打开
-  `communication_mode`（部分机型必须组合使用）；安静环境用默认
-  `voice_recognition` 对唤醒词更友好。
-- **外放**：TTS/媒体通过 `media_player` 实体播报，音量/静音在 HA 中直接调节。
+- **麦克风**：固定使用机带麦克风（原官方应用同款调用），无需选择；硬件
+  降噪/回声消除/自动增益默认开启，可用开关逐项调节。
+- **外放**：语音一律外放（扬声器），TTS/媒体通过 `media_player` 实体播报，
+  音量/静音在 HA 中直接调节。
 
 ## 4. 面板布局 `astrion_layout`（推荐：一行一个房间，无需 JSON）
 
@@ -164,7 +160,21 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | switch / scene | `<domain>.turn_on / turn_off` |
 | media-player | `media_player.media_play_pause / media_next_track / volume_set …` |
 
-## 5. IR 码库 `astrion_ir_codes`
+## 5. IR 码库 `astrion_ir_codes`（推荐：一行一键，无需 JSON）
+
+**最简单写法**——一行一个按键，`设备 | 按键=码`：
+
+```
+# 注释
+小米电视 | POWER=38000,9000,4500,560,560,560,1690,...
+小米电视 | MUTE=sGipAAECAwQFBgcICQ==
+机顶盒 | POWER=JgBMACHgERAQERAAHQAA
+```
+
+码串支持三种格式（自动识别）：逗号时序、Broadlink base64、AES base64。
+设备名与布局里 tv 卡的 `name` 一致时按键本地直发。
+
+### 完整 JSON 形态（高级，可选）
 
 ```json
 {

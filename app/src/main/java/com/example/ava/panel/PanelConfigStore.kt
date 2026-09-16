@@ -64,7 +64,8 @@ class PanelConfigStore @Inject constructor(
     val layout: Flow<PanelLayout> =
         raw.map { PanelLayout.parseFlexible(it.layoutJson) ?: PanelLayout() }
 
-    val irCodebook: Flow<IrCodebook> = raw.map { IrCodebook.fromJson(it.irCodesJson) ?: IrCodebook() }
+    val irCodebook: Flow<IrCodebook> =
+        raw.map { IrCodebook.parseFlexible(it.irCodesJson) ?: IrCodebook() }
 
     /**
      * The layout the panel renders. When no layout has been pushed yet but an
@@ -123,7 +124,7 @@ class PanelConfigStore @Inject constructor(
      * keeps the previous codebook.
      */
     suspend fun applyIrCodesJson(json: String): Boolean = apply("ir_codes", json) { current ->
-        if (IrCodebook.fromJson(json) == null) null
+        if (IrCodebook.parseFlexible(json) == null) null
         else current.copy(irCodesJson = json.trim())
     }
 
