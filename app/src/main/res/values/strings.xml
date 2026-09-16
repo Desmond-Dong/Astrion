@@ -58,13 +58,17 @@
     <string name="description_ir_permission">Grant permission to transmit infrared signals</string>
     <string name="validation_ir_device_name_empty">Device name cannot be empty</string>
     <string name="label_ir_button_add_name">Add button name</string>
-    <string name="label_ir_button_add_timings">Button IR timings</string>
-    <string name="description_ir_button_timings">Comma separated durations, e.g. 3500,-1700,650,-600. Positive durations are IR on (mark), negative are off (space). Add the name first, then the timings.</string>
+    <string name="label_ir_button_add_timings">Button IR code</string>
+    <string name="description_ir_button_timings">Accepts three formats: comma timings "38000,9000,4500,560,560" (first is carrier Hz), AES Base64, or Broadlink Base64. Zigzag timings "3500,-1700,650,-600" also work (positive = mark, negative = space).</string>
     <string name="label_ir_button_delete">Remove button %1$s</string>
     <string name="label_activity_pages">Activity pages</string>
     <string name="description_activity_pages">Pages of the remote you can switch between. Each page is exposed in Home Assistant as a select option, and your remote automation can react to it.</string>
     <string name="label_activity_page_add">Add activity page</string>
     <string name="label_activity_page_delete">Remove page %1$s</string>
+    <string name="label_ha_states_import">HA entity states</string>
+    <string name="description_ha_states_import">Entity IDs to import from Home Assistant for on-screen device tree rendering. Used for multi-room media metadata and device status syncing.</string>
+    <string name="label_ha_entity_add">Add entity ID</string>
+    <string name="label_ha_entity_delete">Remove %1$s</string>
 
     <string name="home_subtitle_devices_buttons_pages">%1$d devices · %2$d buttons · %3$d pages</string>
     <string name="home_section_media_player">Media Player</string>

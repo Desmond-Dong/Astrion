@@ -10,7 +10,10 @@ import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ava.R
+import com.example.ava.esphome.infrared.DecodedIR
+import com.example.ava.esphome.infrared.IrCodec
 import com.example.ava.settings.ActivitySettingsStore
+import com.example.ava.settings.HaStateSettingsStore
 import com.example.ava.settings.IrSettingsStore
 import com.example.ava.settings.MicrophoneSettingsStore
 import com.example.ava.settings.PlayerSettingsStore
@@ -43,13 +46,16 @@ class SettingsViewModel @Inject constructor(
     private val playerSettingsStore: PlayerSettingsStore,
     private val microphoneSettingsStore: MicrophoneSettingsStore,
     private val irSettingsStore: IrSettingsStore,
-    private val activitySettingsStore: ActivitySettingsStore
+    private val activitySettingsStore: ActivitySettingsStore,
+    private val haStateSettingsStore: HaStateSettingsStore
 ) : ViewModel() {
     val satelliteSettingsState = satelliteSettingsStore.getFlow()
 
     val irSettingsState = irSettingsStore.getFlow()
 
     val activitySettingsState = activitySettingsStore.getFlow()
+
+    val haStateSettingsState = haStateSettingsStore.getFlow()
 
     val microphoneSettingsState = microphoneSettingsStore.getFlow().map { settings ->
         val wakeWords = settings.availableWakeWords(context)
@@ -120,13 +126,18 @@ class SettingsViewModel @Inject constructor(
             context.getString(R.string.validation_ir_device_name_empty)
         else null
 
-    fun addButtonToDevice(deviceIndex: Int, buttonName: String, timingsText: String) =
+    fun addButtonToDevice(deviceIndex: Int, buttonName: String, codeText: String) =
         viewModelScope.launch {
-            val timings = parseTimings(timingsText)
-            if (validateIrDeviceName(buttonName).isNullOrBlank() && timings.isNotEmpty()) {
-                irSettingsStore.addButtonToDevice(deviceIndex, buttonName, timings)
+            val code = parseIrCode(codeText)
+            if (validateIrDeviceName(buttonName).isNullOrBlank() && code != null) {
+                irSettingsStore.addButtonToDevice(
+                    deviceIndex,
+                    buttonName,
+                    code.timings,
+                    code.carrierFrequencyHz
+                )
             } else {
-                Timber.w("Cannot add invalid IR button: name=$buttonName timings=$timingsText")
+                Timber.w("Cannot add invalid IR button: name=$buttonName code=$codeText")
             }
         }
 
@@ -134,12 +145,24 @@ class SettingsViewModel @Inject constructor(
         irSettingsStore.removeButtonFromDevice(deviceIndex, buttonName)
     }
 
-    /** Parses "3500,-1700,500,-500" style timings into a list of signed durations. */
-    private fun parseTimings(text: String): List<Int> {
-        if (text.isBlank()) return emptyList()
-        return text.split(",")
+    /**
+     * Parses an IR code in any of the three supported formats (§3.4):
+     * comma timings ("freq,p1,p2,..."), AES binary (Base64) or Broadlink
+     * (Base64). Falls back to legacy signed comma timings
+     * ("3500,-1700,500,-500") with the default carrier.
+     */
+    private fun parseIrCode(text: String): DecodedIR? {
+        if (text.isBlank()) return null
+        IrCodec.decode(text)?.let { return it }
+        // Legacy fallback: signed durations with default 38 kHz carrier
+        val timings = text.split(",")
             .mapNotNull { it.trim().toIntOrNull() }
             .filter { it != 0 }
+        if (timings.isEmpty()) return null
+        return DecodedIR(
+            carrierFrequencyHz = DEFAULT_CARRIER_FREQUENCY_HZ,
+            timings = timings
+        )
     }
 
     fun addActivityPage(name: String) = viewModelScope.launch {
@@ -152,6 +175,16 @@ class SettingsViewModel @Inject constructor(
 
     fun removeActivityPage(index: Int) = viewModelScope.launch {
         activitySettingsStore.removePage(index)
+    }
+
+    fun addHaSyncedEntity(entityId: String) = viewModelScope.launch {
+        if (entityId.isNotBlank()) {
+            haStateSettingsStore.addEntityId(entityId)
+        }
+    }
+
+    fun removeHaSyncedEntity(index: Int) = viewModelScope.launch {
+        haStateSettingsStore.removeEntityId(index)
     }
 
     fun isTransmitIrPermissionGranted(): Boolean =
@@ -260,4 +293,8 @@ class SettingsViewModel @Inject constructor(
         if (port == null || port < 1 || port > 65535)
             context.getString(R.string.validation_voice_satellite_port_invalid)
         else null
+
+    private companion object {
+        const val DEFAULT_CARRIER_FREQUENCY_HZ = 38_000
+    }
 }

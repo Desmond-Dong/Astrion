@@ -46,6 +46,7 @@ fun SettingsScreen(
     val playerState by viewModel.playerSettingsState.collectAsStateWithLifecycle(null)
     val irState by viewModel.irSettingsState.collectAsStateWithLifecycle(null)
     val activityState by viewModel.activitySettingsState.collectAsStateWithLifecycle(null)
+    val haState by viewModel.haStateSettingsState.collectAsStateWithLifecycle(null)
     val disabledLabel = stringResource(R.string.label_disabled)
     val irPermissionGranted = remember { viewModel.isTransmitIrPermissionGranted() }
     val irPermissionLauncher = rememberLauncherForActivityResult(
@@ -329,6 +330,36 @@ fun SettingsScreen(
                 enabled = enabled,
                 validation = { viewModel.validateIrDeviceName(it) },
                 onConfirmRequest = { viewModel.addActivityPage(it) }
+            )
+        }
+        item {
+            HorizontalDivider()
+        }
+        item {
+            SectionTitle(stringResource(R.string.label_ha_states_import))
+        }
+        item {
+            SettingItem(
+                name = stringResource(R.string.label_ha_states_import),
+                description = stringResource(R.string.description_ha_states_import)
+            )
+        }
+        haState?.syncedEntityIds?.forEachIndexed { index, entityId ->
+            item {
+                SettingItem(
+                    modifier = Modifier.clickable {
+                        viewModel.removeHaSyncedEntity(index)
+                    },
+                    name = stringResource(R.string.label_ha_entity_delete, entityId),
+                )
+            }
+        }
+        item {
+            TextSetting(
+                name = stringResource(R.string.label_ha_entity_add),
+                value = "",
+                enabled = enabled,
+                onConfirmRequest = { viewModel.addHaSyncedEntity(it) }
             )
         }
         item {

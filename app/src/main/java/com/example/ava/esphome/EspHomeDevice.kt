@@ -9,16 +9,21 @@ import com.example.ava.server.DEFAULT_SERVER_PORT
 import com.example.ava.server.Server
 import com.example.ava.server.ServerException
 import com.example.ava.server.ServerImpl
+import com.example.ava.services.HaEntityState
+import com.example.ava.services.HomeAssistantStatesStore
 import com.example.esphomeproto.api.DeviceInfoRequest
 import com.example.esphomeproto.api.DeviceInfoResponse
 import com.example.esphomeproto.api.DisconnectRequest
 import com.example.esphomeproto.api.HelloRequest
+import com.example.esphomeproto.api.HomeAssistantStateResponse
 import com.example.esphomeproto.api.ListEntitiesRequest
 import com.example.esphomeproto.api.LogLevel
 import com.example.esphomeproto.api.PingRequest
+import com.example.esphomeproto.api.SubscribeHomeAssistantStateResponse
 import com.example.esphomeproto.api.SubscribeHomeAssistantStatesRequest
 import com.example.esphomeproto.api.SubscribeLogsRequest
 import com.example.esphomeproto.api.SubscribeLogsResponse
+import com.example.esphomeproto.api.SubscribeStatesRequest
 import com.example.esphomeproto.api.SubscribeVoiceAssistantRequest
 import com.example.esphomeproto.api.VoiceAssistantAnnounceRequest
 import com.example.esphomeproto.api.VoiceAssistantConfigurationRequest
@@ -61,13 +66,16 @@ class EspHomeDevice(
     private val deviceInfo: DeviceInfoResponse,
     val voiceAssistant: VoiceAssistant,
     private val logger: Logger? = null,
-    entities: Iterable<Entity> = emptyList()
+    entities: Iterable<Entity> = emptyList(),
+    private val haStatesStore: HomeAssistantStatesStore? = null,
+    private val getHaSyncedEntityIds: suspend () -> List<String> = { emptyList() },
 ) : AutoCloseable {
     private val entities = entities.toList()
     private val _state = MutableStateFlow<EspHomeState>(Disconnected)
     val state = _state.asStateFlow()
     private val isSubscribedToVoiceAssistant = MutableStateFlow(false)
     private val isSubscribedToEntityState = MutableStateFlow(false)
+    private val isSubscribedToHomeAssistantStates = MutableStateFlow(false)
 
     private val scope = CoroutineScope(
         coroutineContext + Job(coroutineContext.job) + CoroutineName("${this.javaClass.simpleName} Scope")
@@ -150,7 +158,8 @@ class EspHomeDevice(
 
             is SubscribeLogsRequest -> logger?.setLogLevel(message.level)
 
-            is SubscribeHomeAssistantStatesRequest -> isSubscribedToEntityState.value = true
+            // HA wants this device's entity states pushed to it.
+            is SubscribeStatesRequest -> isSubscribedToEntityState.value = true
 
             is ListEntitiesRequest -> {
                 entities.map { it.handleMessage(message) }.asFlow().flattenConcat()
@@ -166,6 +175,39 @@ class EspHomeDevice(
             is VoiceAssistantAnnounceRequest,
             is VoiceAssistantEventResponse,
             is VoiceAssistantTimerEventResponse -> voiceAssistant.handleMessage(message)
+
+            // HA is advertising that it can push Home Assistant entity states.
+            // Respond with a SubscribeHomeAssistantStateResponse for every
+            // entity the panel has been configured to import (§5.2 device tree).
+            is SubscribeHomeAssistantStatesRequest -> {
+                Timber.d("HA offered to push entity states, subscribing to configured entities")
+                isSubscribedToHomeAssistantStates.value = true
+                val requestedIds = getHaSyncedEntityIds()
+                for (entityId in requestedIds) {
+                    Timber.d("Subscribing to HA entity: $entityId")
+                    sendMessage(SubscribeHomeAssistantStateResponse.newBuilder().apply {
+                        this.entityId = entityId
+                        once = false
+                    }.build())
+                }
+            }
+
+            // An HA entity state was pushed to us (after we subscribed via 39).
+            is HomeAssistantStateResponse -> {
+                if (message.entityId.isNotEmpty()) {
+                    Timber.d(
+                        "HA entity state update: ${message.entityId}=${message.state}" +
+                            if (message.attribute.isNotEmpty()) " [${message.attribute}]" else ""
+                    )
+                    haStatesStore?.import(
+                        HaEntityState(
+                            entityId = message.entityId,
+                            state = message.state,
+                            attribute = message.attribute
+                        )
+                    )
+                }
+            }
 
             else -> {
                 entities.map { it.handleMessage(message) }.asFlow().flattenConcat()
@@ -194,6 +236,7 @@ class EspHomeDevice(
     private suspend fun onDisconnected() {
         isSubscribedToEntityState.value = false
         isSubscribedToVoiceAssistant.value = false
+        isSubscribedToHomeAssistantStates.value = false
         logger?.setLogLevel(LogLevel.LOG_LEVEL_NONE)
         _state.value = Disconnected
         voiceAssistant.onDisconnected()
@@ -212,5 +255,6 @@ class EspHomeDevice(
         scope.cancel()
         voiceAssistant.close()
         server.close()
+        haStatesStore?.clear()
     }
 }

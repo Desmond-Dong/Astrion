@@ -3,6 +3,17 @@ package com.example.ava.esphome.mediaplayer
 import com.example.esphomeproto.api.MediaPlayerState
 import kotlinx.coroutines.flow.StateFlow
 
+/**
+ * Metadata for the currently (or most recently) played media item. Exposed to
+ * Home Assistant through text sensors so media cards can display what is
+ * playing.
+ */
+data class MediaMetadata(
+    val title: String = "",
+    val artist: String = "",
+    val source: String = "",
+)
+
 interface MediaPlayer {
     /**
      * Called when audio focus is requested and all other playback should be ducked,
@@ -15,6 +26,12 @@ interface MediaPlayer {
      * The current state of media playback.
      */
     val state: StateFlow<MediaPlayerState>
+
+    /**
+     * Metadata of the current media item, or empty metadata when nothing has
+     * been played yet. Used to expose media title/artist text sensors.
+     */
+    val metadata: StateFlow<MediaMetadata>
 
     /**
      * Starts playback of the specified media.

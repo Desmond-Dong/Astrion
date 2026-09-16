@@ -17,6 +17,7 @@ data class IrDeviceSettings(
     val name: String,
     val objectId: String? = null,
     val enabled: Boolean = true,
+    val defaultCarrierFrequencyHz: Int = 38000,
     val buttons: Map<String, List<Int>> = emptyMap()
 )
 
@@ -105,14 +106,22 @@ interface IrSettingsStore : SettingsStore<IrSettings> {
         }
     }
 
-    suspend fun addButtonToDevice(deviceIndex: Int, buttonName: String, timings: List<Int>) {
+    suspend fun addButtonToDevice(
+        deviceIndex: Int,
+        buttonName: String,
+        timings: List<Int>,
+        carrierFrequencyHz: Int = 38000
+    ) {
         if (buttonName.isBlank()) return
         update {
             if (deviceIndex !in it.devices.indices) it
             else {
                 val devices = it.devices.toMutableList()
                 val device = devices[deviceIndex]
-                devices[deviceIndex] = device.copy(buttons = device.buttons + (buttonName.trim() to timings))
+                devices[deviceIndex] = device.copy(
+                    buttons = device.buttons + (buttonName.trim() to timings),
+                    defaultCarrierFrequencyHz = carrierFrequencyHz
+                )
                 it.copy(devices = devices)
             }
         }

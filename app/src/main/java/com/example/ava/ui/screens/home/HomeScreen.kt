@@ -35,10 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,14 +73,18 @@ fun HomeScreen(
     val repeatSound by viewModel.repeatTimerFinishedSound.collectAsStateWithLifecycle(true)
     val micMuted by viewModel.micMuted.collectAsStateWithLifecycle(false)
     val satelliteName by viewModel.satelliteName.collectAsStateWithLifecycle("")
+    val selectedPage by viewModel.currentPage.collectAsStateWithLifecycle("")
+    val haEntityStates by viewModel.haEntityStates.collectAsStateWithLifecycle(emptyMap())
     val timerState = timerState()
     val hasTimers = timerState.timers.isNotEmpty()
 
     val activityPages = remember(enabledDevices, pages) {
         (enabledDevices.map { it.name } + pages).distinct()
     }
-    var selectedPage by rememberSaveable(activityPages) {
-        mutableStateOf(activityPages.firstOrNull() ?: "")
+    val visiblePage = if (selectedPage.isNotEmpty() && selectedPage in activityPages) {
+        selectedPage
+    } else {
+        activityPages.firstOrNull() ?: ""
     }
     val totalButtons = remember(enabledDevices) {
         enabledDevices.sumOf { it.buttons.size }
@@ -161,8 +162,8 @@ fun HomeScreen(
                         item {
                             ActivityPagesRow(
                                 pages = activityPages,
-                                selected = selectedPage,
-                                onSelect = { selectedPage = it }
+                                selected = visiblePage,
+                                onSelect = { viewModel.navigateTo(it) }
                             )
                         }
                     }
@@ -184,10 +185,24 @@ fun HomeScreen(
                             onMicMutedChanged = { viewModel.setMicMuted(it) }
                         )
                     }
+                    if (haEntityStates.isNotEmpty()) {
+                        items(
+                            haEntityStates.entries.toList(),
+                            key = { it.key }
+                        ) { (key, entityState) ->
+                            HaEntityCard(
+                                entityId = key,
+                                state = entityState.state,
+                                attribute = entityState.attribute
+                            )
+                        }
+                    }
                     items(enabledDevices, key = { it.objectId ?: it.name }) { device ->
                         DeviceCard(
                             device = device,
-                            onPress = { timings -> viewModel.transmitTimings(timings) }
+                            onPress = { timings ->
+                                viewModel.transmitTimings(device.defaultCarrierFrequencyHz, timings)
+                            }
                         )
                     }
                 }
@@ -373,6 +388,33 @@ private fun DeviceCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun HaEntityCard(
+    entityId: String,
+    state: String,
+    attribute: String
+) {
+    HomeCard {
+        Text(
+            text = entityId.substringAfterLast('.').substringBeforeLast('_').ifBlank { entityId },
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Row {
+            Text(
+                text = if (attribute.isNotBlank()) "$attribute: " else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = state,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

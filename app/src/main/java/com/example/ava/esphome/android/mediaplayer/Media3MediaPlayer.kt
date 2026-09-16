@@ -13,6 +13,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.example.ava.esphome.mediaplayer.MediaMetadata
 import com.example.ava.esphome.mediaplayer.MediaPlayer
 import com.example.esphomeproto.api.MediaPlayerState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +70,9 @@ class Media3MediaPlayer(
     private val _mediaState = MutableStateFlow(MediaPlayerState.MEDIA_PLAYER_STATE_IDLE)
     override val state = _mediaState.asStateFlow()
 
+    private val _metadata = MutableStateFlow(MediaMetadata())
+    override val metadata = _metadata.asStateFlow()
+
     private val isPlaying: Boolean get() = _player?.isPlaying ?: false
 
     private val isPaused: Boolean
@@ -122,20 +126,35 @@ class Media3MediaPlayer(
         val player = _player
         check(player != null) { "player not initialized" }
 
+        val mediaUrls = mediaUris.filter { it.isNotEmpty() }
+        if (mediaUrls.isEmpty()) {
+            Timber.w("Ignoring empty media uris")
+            return
+        }
+
         player.addListener(getPlayerListener(onCompletion))
         runCatching {
-            for (mediaUri in mediaUris) {
-                if (mediaUri.isNotEmpty()) {
-                    player.addMediaItem(MediaItem.fromUri(mediaUri))
-                } else Timber.w("Ignoring empty media uri")
+            for (mediaUri in mediaUrls) {
+                player.addMediaItem(MediaItem.fromUri(mediaUri))
             }
+            // Expose the first played item as metadata so media cards and the
+            // panel can display what is playing.
+            _metadata.value = metadataFor(mediaUrls.first())
             player.playWhenReady = true
             player.prepare()
         }.onFailure {
-            Timber.e(it, "Error playing media $mediaUris")
+            Timber.e(it, "Error playing media $mediaUrls")
             onCompletion()
             close()
         }
+    }
+
+    private fun metadataFor(uri: String): MediaMetadata {
+        val lastSegment = uri.substringAfterLast('/').substringBefore('?')
+        return MediaMetadata(
+            title = lastSegment.ifBlank { uri },
+            source = uri
+        )
     }
 
     override fun setPaused(paused: Boolean) {
@@ -180,5 +199,6 @@ class Media3MediaPlayer(
         focusRegistration?.close()
         focusRegistration = null
         _mediaState.value = MediaPlayerState.MEDIA_PLAYER_STATE_IDLE
+        _metadata.value = MediaMetadata()
     }
 }

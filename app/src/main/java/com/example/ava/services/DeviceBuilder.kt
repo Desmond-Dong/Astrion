@@ -17,6 +17,7 @@ import com.example.ava.esphome.entities.InfraredEntity
 import com.example.ava.esphome.entities.MediaPlayerEntity
 import com.example.ava.esphome.entities.SelectEntity
 import com.example.ava.esphome.entities.SwitchEntity
+import com.example.ava.esphome.entities.TextSensorEntity
 import com.example.ava.esphome.infrared.InfraredManager
 import com.example.ava.esphome.voiceassistant.VoiceAssistant
 import com.example.ava.esphome.voiceassistant.VoiceInputImpl
@@ -24,6 +25,7 @@ import com.example.ava.esphome.voiceassistant.VoiceOutputImpl
 import com.example.ava.server.ServerImpl
 import com.example.ava.settings.ActivitySettingsStore
 import com.example.ava.settings.AudioProcessingSettingsStore
+import com.example.ava.settings.HaStateSettingsStore
 import com.example.ava.settings.IrDeviceSettings
 import com.example.ava.settings.IrSettingsStore
 import com.example.ava.settings.MicrophoneSettingsStore
@@ -36,6 +38,9 @@ import com.example.esphomeproto.api.VoiceAssistantFeature
 import com.example.esphomeproto.api.deviceInfoResponse
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
@@ -47,7 +52,10 @@ class DeviceBuilder @Inject constructor(
     private val audioProcessingSettingsStore: AudioProcessingSettingsStore,
     private val playerSettingsStore: PlayerSettingsStore,
     private val irSettingsStore: IrSettingsStore,
-    private val activitySettingsStore: ActivitySettingsStore
+    private val activitySettingsStore: ActivitySettingsStore,
+    private val activityNavigator: ActivityNavigator,
+    private val haStatesStore: HomeAssistantStatesStore,
+    private val haStateSettingsStore: HaStateSettingsStore
 ) {
     suspend fun buildVoiceSatellite(coroutineContext: CoroutineContext): EspHomeDevice {
         val satelliteSettings = satelliteSettingsStore.get()
@@ -75,13 +83,16 @@ class DeviceBuilder @Inject constructor(
                 voiceOutput = voiceOutput
             ),
             logger = TimberLogger(),
-            entities = buildEntities(voiceOutput, deviceHolder)
+            entities = buildEntities(coroutineContext, voiceOutput, deviceHolder),
+            haStatesStore = haStatesStore,
+            getHaSyncedEntityIds = { haStateSettingsStore.get().syncedEntityIds }
         )
         deviceHolder.set(device)
         return device
     }
 
     private suspend fun buildEntities(
+        coroutineContext: CoroutineContext,
         voiceOutput: VoiceOutputImpl,
         deviceHolder: AtomicReference<EspHomeDevice?>
     ): List<Entity> {
@@ -118,11 +129,25 @@ class DeviceBuilder @Inject constructor(
             getState = playerSettingsStore.repeatTimerFinishedSound
         ) { playerSettingsStore.repeatTimerFinishedSound.set(it) }
 
+        // Media metadata text sensors (SendSpin media cards)
+        entities += TextSensorEntity(
+            key = keyAllocator.next(),
+            name = "Media Title",
+            objectId = "media_title",
+            getState = voiceOutput.metadata.map { it.title }
+        )
+        entities += TextSensorEntity(
+            key = keyAllocator.next(),
+            name = "Media Artist",
+            objectId = "media_artist",
+            getState = voiceOutput.metadata.map { it.artist }
+        )
+
         // Infrared devices
         entities += buildIrEntities(keyAllocator)
 
         // Gateway/activity controls
-        entities += buildActivityEntities(keyAllocator, deviceHolder)
+        entities += buildActivityEntities(coroutineContext, keyAllocator, deviceHolder)
 
         return entities
     }
@@ -158,7 +183,9 @@ class DeviceBuilder @Inject constructor(
                     name = "$buttonName (${device.name})",
                     objectId = device.irButtonObjectId(buttonName),
                     onPress = {
-                        infraredManager.transmit(INFRARED_CARRIER_FREQUENCY_HZ, timings, 1)
+                        infraredManager.transmit(
+                            device.defaultCarrierFrequencyHz, timings, 1
+                        )
                     }
                 )
             }
@@ -167,22 +194,50 @@ class DeviceBuilder @Inject constructor(
     }
 
     private suspend fun buildActivityEntities(
+        coroutineContext: CoroutineContext,
         keyAllocator: EntityKeyAllocator,
         deviceHolder: AtomicReference<EspHomeDevice?>
     ): List<Entity> {
         val irDevices = irSettingsStore.get().devices.filter { it.enabled }.map { it.name }
         val activityPages = (irDevices + activitySettingsStore.get().pages).distinct()
+        val scope = CoroutineScope(coroutineContext + Job())
+        val initialPage = activityNavigator.currentPage.value
+            .ifEmpty { activityPages.firstOrNull() ?: "" }
 
         return listOf(
+            // A-Type: momentary navigation select. Selecting a page jumps the
+            // panel there, then the select resets to the sentinel after 300 ms
+            // so the same navigation can be re-fired repeatedly.
+            SelectEntity(
+                key = keyAllocator.next(),
+                name = "Navigate",
+                objectId = "navigate",
+                options = listOf(NAVIGATE_SENTINEL) + activityPages,
+                initialState = NAVIGATE_SENTINEL,
+                onSelect = { page ->
+                    if (page != NAVIGATE_SENTINEL) {
+                        Timber.d("Navigating to page: $page")
+                        activityNavigator.setPage(page)
+                    }
+                },
+                autoResetAfterMs = NAVIGATE_RESET_MILLIS,
+                sentinel = NAVIGATE_SENTINEL,
+                scope = scope
+            ),
+            // B-Type: persistent current-scene select. Kept in sync with both
+            // the panel pages and Home Assistant automations.
             SelectEntity(
                 key = keyAllocator.next(),
                 name = "Current Activity",
                 objectId = "current_activity",
                 options = activityPages,
-                initialState = activityPages.firstOrNull() ?: "",
+                initialState = initialPage,
                 onSelect = { page ->
                     Timber.d("Activity changed to: $page")
-                }
+                    activityNavigator.setPage(page)
+                },
+                scope = scope,
+                externalState = activityNavigator.currentPage
             ),
             ButtonEntity(
                 key = keyAllocator.next(),
@@ -243,11 +298,16 @@ class DeviceBuilder @Inject constructor(
 
     private companion object {
         /**
-         * IR devices usually transmit on 38 kHz. The platform emitter filters
-         * the frequency when the request carries a value; when transmitting a
-         * stored code we use this default carrier.
+         * The navigation select (A-Type) resets back to this sentinel value
+         * shortly after a page is selected.
          */
-        const val INFRARED_CARRIER_FREQUENCY_HZ = 38_000
+        const val NAVIGATE_SENTINEL = "—"
+
+        /**
+         * How long a navigation select stays at the picked page before
+         * resetting to the sentinel (milliseconds).
+         */
+        const val NAVIGATE_RESET_MILLIS = 300L
     }
 }
 

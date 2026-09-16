@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ava.esphome.infrared.InfraredManager
+import com.example.ava.services.ActivityNavigator
+import com.example.ava.services.HomeAssistantStatesStore
 import com.example.ava.settings.ActivitySettingsStore
 import com.example.ava.settings.IrSettingsStore
 import com.example.ava.settings.MicrophoneSettingsStore
@@ -26,7 +28,9 @@ class HomeViewModel @Inject constructor(
     val activitySettingsStore: ActivitySettingsStore,
     val playerSettingsStore: PlayerSettingsStore,
     val microphoneSettingsStore: MicrophoneSettingsStore,
-    val voiceSatelliteSettingsStore: VoiceSatelliteSettingsStore
+    val voiceSatelliteSettingsStore: VoiceSatelliteSettingsStore,
+    private val activityNavigator: ActivityNavigator,
+    private val haStatesStore: HomeAssistantStatesStore
 ) : ViewModel() {
 
     val irDevices = irSettingsStore.irDevices
@@ -37,6 +41,8 @@ class HomeViewModel @Inject constructor(
     val repeatTimerFinishedSound = playerSettingsStore.repeatTimerFinishedSound
     val micMuted = microphoneSettingsStore.muted
     val satelliteName = voiceSatelliteSettingsStore.name
+    val currentPage = activityNavigator.currentPage
+    val haEntityStates = haStatesStore.states
 
     private val infraredManager by lazy { InfraredManager(context) }
 
@@ -44,10 +50,10 @@ class HomeViewModel @Inject constructor(
      * Transmits a stored IR code packet directly from the home screen, acting
      * like a remote while the ESPHome entities stay in sync in the background.
      */
-    fun transmitTimings(timings: List<Int>) {
+    fun transmitTimings(carrierFrequencyHz: Int, timings: List<Int>) {
         if (timings.isEmpty()) return
         viewModelScope.launch {
-            infraredManager.transmit(INFRARED_CARRIER_FREQUENCY_HZ, timings, 1)
+            infraredManager.transmit(carrierFrequencyHz, timings, 1)
         }
     }
 
@@ -62,7 +68,5 @@ class HomeViewModel @Inject constructor(
 
     fun setMicMuted(value: Boolean) = viewModelScope.launch { micMuted.set(value) }
 
-    private companion object {
-        const val INFRARED_CARRIER_FREQUENCY_HZ = 38_000
-    }
+    fun navigateTo(page: String) = activityNavigator.setPage(page)
 }
