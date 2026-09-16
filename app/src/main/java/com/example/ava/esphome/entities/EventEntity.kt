@@ -22,6 +22,7 @@ class EventEntity(
     val key: Int,
     val name: String,
     val objectId: String,
+    val disabledByDefault: Boolean = false,
     val eventTypes: List<String>,
     /** Emits the event type to announce each time the event occurs. */
     private val events: Flow<String>,
@@ -32,6 +33,7 @@ class EventEntity(
                 key = this@EventEntity.key
                 name = this@EventEntity.name
                 objectId = this@EventEntity.objectId
+                disabledByDefault = this@EventEntity.disabledByDefault
                 addAllEventTypes(this@EventEntity.eventTypes)
             }.build())
         }

@@ -19,11 +19,13 @@ class ButtonEntity(
     val key: Int,
     val name: String,
     val objectId: String,
+    val disabledByDefault: Boolean = false,
     private val onPress: suspend () -> Unit
 ) : Entity {
     override fun handleMessage(message: MessageLite) = flow {
         when (message) {
             is ListEntitiesRequest -> emit(listEntitiesButtonResponse {
+                disabledByDefault = this@ButtonEntity.disabledByDefault
                 key = this@ButtonEntity.key
                 name = this@ButtonEntity.name
                 objectId = this@ButtonEntity.objectId

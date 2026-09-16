@@ -42,6 +42,7 @@ class SelectEntity(
     val key: Int,
     val name: String,
     val objectId: String,
+    val disabledByDefault: Boolean = false,
     private val options: List<String>,
     initialState: String = "",
     private val onSelect: suspend (String) -> Unit = {},
@@ -80,6 +81,7 @@ class SelectEntity(
                 key = this@SelectEntity.key
                 name = this@SelectEntity.name
                 objectId = this@SelectEntity.objectId
+                disabledByDefault = this@SelectEntity.disabledByDefault
                 addAllOptions(this@SelectEntity.options)
             }.build())
 

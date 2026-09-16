@@ -65,6 +65,36 @@ class PanelConfigStore @Inject constructor(
 
     val irCodebook: Flow<IrCodebook> = raw.map { IrCodebook.fromJson(it.irCodesJson) ?: IrCodebook() }
 
+    /**
+     * The layout the panel renders. When no layout has been pushed yet but an
+     * IR codebook exists, a default "所有设备" room with one tv card per
+     * codebook device is synthesised — pushing only `astrion_ir_codes` yields
+     * a working remote (两步上手).
+     */
+    val effectiveLayout: Flow<PanelLayout> =
+        kotlinx.coroutines.flow.combine(layout, irCodebook) { layout, codebook ->
+            if (layout.rooms.isEmpty() && codebook.devices.isNotEmpty()) {
+                PanelLayout(
+                    rooms = listOf(
+                        PanelRoom(
+                            title = "所有设备",
+                            cards = codebook.devices.map { (deviceName, buttons) ->
+                                PanelCard(
+                                    type = PanelCardTypes.TV,
+                                    name = deviceName,
+                                    entities = buttons.keys.map { PanelEntityRef(key = it) }
+                                )
+                            }
+                        )
+                    ),
+                    pages = layout.pages,
+                    syncEntities = layout.syncEntities
+                )
+            } else {
+                layout
+            }
+        }
+
     val keyBindings: Flow<PanelKeyBindings> =
         raw.map { PanelKeyBindings.fromJson(it.keyBindingsJson) ?: PanelKeyBindings() }
 

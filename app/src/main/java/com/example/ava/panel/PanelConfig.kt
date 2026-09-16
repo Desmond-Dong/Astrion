@@ -66,11 +66,13 @@ data class PanelRoom(
 
 /**
  * One device card. [type] selects the detail page; [entities] lists the Home
- * Assistant entities backing the card.
+ * Assistant entities backing the card. [type] is optional — it is inferred
+ * from the primary entity's domain when omitted, so minimal layouts only need
+ * a name and an entity_id.
  */
 @Serializable
 data class PanelCard(
-    val type: String,
+    val type: String = "",
     val uuid: String = "",
     val name: String = "",
     /** `android_tv` / `apple_tv` for tv cards (§4.1). */
@@ -81,10 +83,29 @@ data class PanelCard(
     @SerialName("percentage_step") val percentageStep: Int = 0,
     val entities: List<PanelEntityRef> = emptyList(),
 ) {
+    /**
+     * The card type after domain-based inference (§4 aiks-* card types).
+     */
+    val resolvedType: String
+        get() = type.ifBlank {
+            when (primaryEntity?.entityDomain) {
+                "light" -> PanelCardTypes.LIGHT
+                "climate", "water_heater" -> PanelCardTypes.CLIMATE
+                "fan" -> PanelCardTypes.FAN
+                "cover", "valve" -> PanelCardTypes.COVER
+                "media_player" -> PanelCardTypes.MEDIA_PLAYER
+                "remote" -> PanelCardTypes.TV
+                "scene", "script" -> PanelCardTypes.SCENE
+                "weather" -> PanelCardTypes.WEATHER
+                "vacuum", "lawn_mower" -> PanelCardTypes.HOST
+                else -> PanelCardTypes.SWITCH
+            }
+        }
+
     /** Stable identity used for navigation; falls back to a type+name slug. */
     val cardId: String
         get() = uuid.ifBlank {
-            "${type}_${name.ifBlank { entities.firstOrNull()?.entityId ?: "" }}"
+            "${type.ifBlank { resolvedType }}_${name.ifBlank { entities.firstOrNull()?.entityId ?: "" }}"
         }
 
     /** Primary entity used for state display and default actions. */

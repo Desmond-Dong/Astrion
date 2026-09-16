@@ -14,6 +14,7 @@ class SwitchEntity(
     val key: Int,
     val name: String,
     val objectId: String,
+    val disabledByDefault: Boolean = false,
     val entityCategory: EntityCategory = EntityCategory.ENTITY_CATEGORY_CONFIG,
     val getState: Flow<Boolean>,
     val setState: suspend (Boolean) -> Unit
@@ -21,6 +22,7 @@ class SwitchEntity(
     override fun handleMessage(message: MessageLite) = flow {
         when (message) {
             is ListEntitiesRequest -> emit(listEntitiesSwitchResponse {
+                disabledByDefault = this@SwitchEntity.disabledByDefault
                 key = this@SwitchEntity.key
                 name = this@SwitchEntity.name
                 objectId = this@SwitchEntity.objectId

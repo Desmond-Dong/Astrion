@@ -26,6 +26,7 @@ class TextEntity(
     val key: Int,
     val name: String,
     val objectId: String,
+    val disabledByDefault: Boolean = false,
     val maxLength: Int = DEFAULT_MAX_LENGTH,
     initialState: String = "",
     private val onText: suspend (String) -> Unit = {},
@@ -43,6 +44,7 @@ class TextEntity(
     override fun handleMessage(message: MessageLite) = flow {
         when (message) {
             is ListEntitiesRequest -> emit(listEntitiesTextResponse {
+                disabledByDefault = this@TextEntity.disabledByDefault
                 key = this@TextEntity.key
                 name = this@TextEntity.name
                 objectId = this@TextEntity.objectId

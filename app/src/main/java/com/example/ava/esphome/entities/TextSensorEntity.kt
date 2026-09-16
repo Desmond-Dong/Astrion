@@ -18,11 +18,13 @@ class TextSensorEntity(
     val key: Int,
     val name: String,
     val objectId: String,
+    val disabledByDefault: Boolean = false,
     private val getState: Flow<String>,
 ) : Entity {
     override fun handleMessage(message: MessageLite) = flow {
         when (message) {
             is ListEntitiesRequest -> emit(listEntitiesTextSensorResponse {
+                disabledByDefault = this@TextSensorEntity.disabledByDefault
                 key = this@TextSensorEntity.key
                 name = this@TextSensorEntity.name
                 objectId = this@TextSensorEntity.objectId

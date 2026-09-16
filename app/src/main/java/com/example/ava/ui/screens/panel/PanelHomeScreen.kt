@@ -106,7 +106,7 @@ fun PanelCard.displayName(): String =
 fun cardStateText(card: PanelCard, states: Map<String, com.example.ava.services.HaEntityState>): String {
     val primary = card.primaryEntity ?: return ""
     val state = states[primary.entityId]?.state ?: return ""
-    return when (card.type) {
+    return when (card.resolvedType) {
         PanelCardTypes.CLIMATE -> {
             val temp = states["${primary.entityId}.temperature"]?.state
             buildString {
@@ -319,8 +319,8 @@ private fun DeviceCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    painter = painterResource(cardIconRes(card.type)),
-                    contentDescription = card.type,
+                    painter = painterResource(cardIconRes(card.resolvedType)),
+                    contentDescription = card.resolvedType,
                     tint = RemoteColors.accent,
                     modifier = Modifier.size(26.dp)
                 )

@@ -148,7 +148,7 @@ fun DeviceDetailScreen(
         title = current?.displayName() ?: "",
         onBack = { navController.popBackStack() }
     ) {
-        when (current?.type) {
+        when (current?.resolvedType) {
             PanelCardTypes.TV -> TvRemoteContent(current, haStates, viewModel)
             PanelCardTypes.CLIMATE -> ClimateContent(current, haStates, viewModel)
             PanelCardTypes.LIGHT -> LightContent(current, haStates, viewModel)
@@ -692,7 +692,7 @@ private fun SwitchSceneContent(
     viewModel: DeviceDetailViewModel,
 ) {
     val state = stateOf(card, haStates)
-    val isScene = card.type == PanelCardTypes.SCENE
+    val isScene = card.resolvedType == PanelCardTypes.SCENE
 
     Column(
         modifier = Modifier.fillMaxSize(),

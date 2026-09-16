@@ -20,6 +20,7 @@ class NumberEntity(
     val key: Int,
     val name: String,
     val objectId: String,
+    val disabledByDefault: Boolean = false,
     private val minValue: Float,
     private val maxValue: Float,
     private val step: Float = 0.01f,
@@ -32,6 +33,7 @@ class NumberEntity(
     override fun handleMessage(message: MessageLite) = flow {
         when (message) {
             is ListEntitiesRequest -> emit(listEntitiesNumberResponse {
+                disabledByDefault = this@NumberEntity.disabledByDefault
                 key = this@NumberEntity.key
                 name = this@NumberEntity.name
                 objectId = this@NumberEntity.objectId

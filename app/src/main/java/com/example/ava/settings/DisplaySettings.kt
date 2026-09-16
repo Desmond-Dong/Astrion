@@ -24,6 +24,11 @@ data class DisplaySettings(
      * 0 keeps the screensaver off (default).
      */
     val screenSaverTimeout: Int = 0,
+    /**
+     * Raise-to-wake accelerometer threshold in m/s²; 0 disables the feature
+     * (default). Picking the panel up produces jerk spikes well above 4.
+     */
+    val raiseToWakeThreshold: Float = 0f,
 )
 
 private val DEFAULT = DisplaySettings()
@@ -51,4 +56,11 @@ interface DisplaySettingsStore : SettingsStore<DisplaySettings> {
      */
     val screenSaverTimeout: SettingState<Int>
         get() = setting(get = { screenSaverTimeout }, set = { copy(screenSaverTimeout = it) })
+
+    /**
+     * The raise-to-wake accelerometer threshold in m/s²; 0 keeps the feature
+     * off.
+     */
+    val raiseToWakeThreshold: SettingState<Float>
+        get() = setting(get = { raiseToWakeThreshold }, set = { copy(raiseToWakeThreshold = it) })
 }

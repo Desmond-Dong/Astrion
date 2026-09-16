@@ -174,6 +174,7 @@ class DeviceBuilder @Inject constructor(
             objectId = "second_wake_word",
             options = listOf(WAKE_WORD_NONE) + wakeWordOptions,
             initialState = micSettings.secondWakeWord ?: WAKE_WORD_NONE,
+            disabledByDefault = true,
             onSelect = { value ->
                 microphoneSettingsStore.secondWakeWord.set(
                     value.takeUnless { it == WAKE_WORD_NONE }
@@ -213,6 +214,7 @@ class DeviceBuilder @Inject constructor(
             initialState = AUDIO_SOURCE_OPTIONS
                 .firstOrNull { it.second == audioProcessingSettingsStore.get().audioSource }
                 ?.first ?: AUDIO_SOURCE_OPTIONS.first().first,
+            disabledByDefault = true,
             onSelect = { label ->
                 val source = AUDIO_SOURCE_OPTIONS
                     .firstOrNull { it.first == label }?.second
@@ -224,6 +226,7 @@ class DeviceBuilder @Inject constructor(
             key = keyAllocator.next(),
             name = "Communication Mode",
             objectId = "communication_mode",
+            disabledByDefault = true,
             getState = audioProcessingSettingsStore.audioMode
                 .map { it == AudioManager.MODE_IN_COMMUNICATION }
         ) { enabled ->
@@ -235,24 +238,28 @@ class DeviceBuilder @Inject constructor(
             key = keyAllocator.next(),
             name = "Speakerphone",
             objectId = "speakerphone",
+            disabledByDefault = true,
             getState = audioProcessingSettingsStore.speakerphone
         ) { audioProcessingSettingsStore.speakerphone.set(it) }
         entities += SwitchEntity(
             key = keyAllocator.next(),
             name = "Noise Suppression",
             objectId = "noise_suppression",
+            disabledByDefault = true,
             getState = audioProcessingSettingsStore.noiseSuppression
         ) { audioProcessingSettingsStore.noiseSuppression.set(it) }
         entities += SwitchEntity(
             key = keyAllocator.next(),
             name = "Echo Cancellation",
             objectId = "echo_cancellation",
+            disabledByDefault = true,
             getState = audioProcessingSettingsStore.echoCancellation
         ) { audioProcessingSettingsStore.echoCancellation.set(it) }
         entities += SwitchEntity(
             key = keyAllocator.next(),
             name = "Auto Gain",
             objectId = "auto_gain",
+            disabledByDefault = true,
             getState = audioProcessingSettingsStore.autoGain
         ) { audioProcessingSettingsStore.autoGain.set(it) }
 
@@ -302,7 +309,7 @@ class DeviceBuilder @Inject constructor(
         // layout and IR codebook JSON into these text entities.
         entities += buildConfigEntities(keyAllocator)
 
-        // Display / power tuning (§3.10.7 screensaver)
+        // Display / power tuning (§3.10.7 screensaver, §3.8 raise to wake)
         entities += buildDisplayEntities(keyAllocator)
 
         // IR devices from the HA codebook
@@ -348,16 +355,18 @@ class DeviceBuilder @Inject constructor(
                 name = "Key Bindings",
                 objectId = "astrion_key_bindings",
                 initialState = config.keyBindingsJson,
+                disabledByDefault = true,
                 onText = { json -> panelConfigStore.applyKeyBindingsJson(json) }
             )
         )
     }
 
     /**
-     * Display / power tuning exposed to Home Assistant (§3.10.7): the idle
-     * seconds before the screensaver overlay shows, 0 disables it. The value
-     * is stored in [DisplaySettingsStore] and picked up live by the
-     * [com.example.ava.panel.ScreensaverController].
+     * Display / power tuning exposed to Home Assistant (§3.10.7/§3.8): the
+     * screensaver idle seconds (0 disables it) and the raise-to-wake
+     * accelerometer threshold in m/s² (0 disables it). Values are stored in
+     * [DisplaySettingsStore] and picked up live by the screensaver controller
+     * and the [RaiseToWakeController].
      */
     private fun buildDisplayEntities(
         keyAllocator: EntityKeyAllocator
@@ -371,6 +380,16 @@ class DeviceBuilder @Inject constructor(
             step = 5f,
             getState = displaySettingsStore.screenSaverTimeout.map { it.toFloat() },
             setState = { seconds -> displaySettingsStore.screenSaverTimeout.set(seconds.roundToInt()) }
+        ),
+        NumberEntity(
+            key = keyAllocator.next(),
+            name = "Raise To Wake Threshold",
+            objectId = "raise_to_wake_threshold",
+            minValue = 0f,
+            maxValue = 10f,
+            step = 0.1f,
+            getState = displaySettingsStore.raiseToWakeThreshold,
+            setState = { displaySettingsStore.raiseToWakeThreshold.set(it) }
         )
     )
 
@@ -418,7 +437,7 @@ class DeviceBuilder @Inject constructor(
         keyAllocator: EntityKeyAllocator,
         deviceHolder: AtomicReference<EspHomeDevice?>
     ): List<Entity> {
-        val layout = panelConfigStore.layout.first()
+        val layout = panelConfigStore.effectiveLayout.first()
         val activityPages = (layout.rooms.map { it.title } + layout.pages)
             .filter { it.isNotBlank() }
             .distinct()
