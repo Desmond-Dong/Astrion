@@ -26,6 +26,8 @@ import com.example.ava.esphome.voiceassistant.VoiceOutputImpl
 import com.example.ava.panel.PanelConfigStore
 import com.example.ava.panel.PanelIrController
 import com.example.ava.panel.irObjectId
+import com.example.ava.server.ServerImpl
+import com.example.ava.settings.AudioProcessingSettingsStore
 import com.example.ava.settings.MicrophoneSettingsStore
 import com.example.ava.settings.PlayerSettingsStore
 import com.example.ava.settings.VoiceSatelliteSettingsStore
@@ -40,6 +42,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicReference
+import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 
 /**

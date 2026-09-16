@@ -22,7 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.ava.R
-import com.example.ava.ui.screens.settings.components.SwitchSetting
+import com.example.ava.ui.components.SwitchSetting
 import com.example.ava.ui.theme.AstrionTheme
 import com.joaomgcd.taskerpluginlibrary.config.TaskerPluginConfig
 import com.joaomgcd.taskerpluginlibrary.config.TaskerPluginConfigHelper
