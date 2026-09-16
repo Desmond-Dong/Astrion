@@ -1,9 +1,9 @@
 package com.example.ava.esphome.entities
 
 import com.example.esphomeproto.api.EventResponse
+import com.example.esphomeproto.api.ListEntitiesEventResponse
 import com.example.esphomeproto.api.ListEntitiesRequest
 import com.example.esphomeproto.api.eventResponse
-import com.example.esphomeproto.api.listEntitiesEventResponse
 import com.google.protobuf.MessageLite
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -28,12 +28,12 @@ class EventEntity(
 ) : Entity {
     override fun handleMessage(message: MessageLite) = flow {
         when (message) {
-            is ListEntitiesRequest -> emit(listEntitiesEventResponse {
+            is ListEntitiesRequest -> emit(ListEntitiesEventResponse.newBuilder().apply {
                 key = this@EventEntity.key
                 name = this@EventEntity.name
                 objectId = this@EventEntity.objectId
                 addAllEventTypes(this@EventEntity.eventTypes)
-            })
+            }.build())
         }
     }
 
