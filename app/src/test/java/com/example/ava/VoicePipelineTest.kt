@@ -350,6 +350,8 @@ class VoicePipelineTest {
             }
         )
 
+        // start() creates the silence detector for the run
+        pipeline.start()
         pipeline.handleEvent(voiceAssistantEventResponse {
             eventType = VoiceAssistantEvent.VOICE_ASSISTANT_RUN_START
         })
@@ -364,7 +366,8 @@ class VoicePipelineTest {
 
         assertEquals(Processing, state)
         assertEquals(false, listening)
-        assertEquals(3, sentMessages.size)
+        // start request + speech audio + trailing silence + end-of-audio frame
+        assertEquals(4, sentMessages.size)
         val endFrame = sentMessages.last() as VoiceAssistantAudio
         assertEquals(true, endFrame.end)
         assertEquals(0, endFrame.data.size())
@@ -379,6 +382,7 @@ class VoicePipelineTest {
             stateChanged = { state = it }
         )
 
+        pipeline.start()
         pipeline.handleEvent(voiceAssistantEventResponse {
             eventType = VoiceAssistantEvent.VOICE_ASSISTANT_RUN_START
         })
@@ -387,8 +391,9 @@ class VoicePipelineTest {
         pipeline.processMicAudio(ByteString.copyFrom(silentChunk()))
 
         assertEquals(Listening, state)
-        assert(sentMessages.isNotEmpty())
-        assert(sentMessages.all { it is VoiceAssistantAudio && !it.end })
+        val audioFrames = sentMessages.filterIsInstance<VoiceAssistantAudio>()
+        assert(audioFrames.isNotEmpty())
+        assert(audioFrames.none { it.end })
     }
 
     private fun speechChunk(): ByteArray {
