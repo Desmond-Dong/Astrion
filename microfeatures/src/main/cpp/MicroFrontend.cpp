@@ -1,6 +1,4 @@
 //
-// Created by brownard on 25/08/2025.
-//
 #include <jni.h>
 #include <iostream>
 #include <vector>

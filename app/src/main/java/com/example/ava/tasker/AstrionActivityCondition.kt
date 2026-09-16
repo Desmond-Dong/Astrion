@@ -22,7 +22,7 @@ import timber.log.Timber
  * are implemented manually.
  */
 @TaskerInputRoot
-class AvaActivityInput @JvmOverloads constructor(
+class AstrionActivityInput @JvmOverloads constructor(
     @field:TaskerInputField("conversing", labelResIdName = "tasker_filter_conversing")
     val conversing: Boolean = true,
     @field:TaskerInputField("timer_ringing", labelResIdName = "tasker_filter_timer_ringing")
@@ -33,14 +33,14 @@ class AvaActivityInput @JvmOverloads constructor(
     val timerPaused: Boolean = false
 ) {
     override fun toString(): String =
-        "AvaActivityInput(conversing=$conversing, timerRinging=$timerRinging, timerRunning=$timerRunning, timerPaused=$timerPaused)"
+        "AstrionActivityInput(conversing=$conversing, timerRinging=$timerRinging, timerRunning=$timerRunning, timerPaused=$timerPaused)"
 
     fun copy(
         conversing: Boolean = this.conversing,
         timerRinging: Boolean = this.timerRinging,
         timerRunning: Boolean = this.timerRunning,
         timerPaused: Boolean = this.timerPaused
-    ): AvaActivityInput = AvaActivityInput(conversing, timerRinging, timerRunning, timerPaused)
+    ): AstrionActivityInput = AstrionActivityInput(conversing, timerRinging, timerRunning, timerPaused)
 }
 
 val conversingStates = setOf(Listening, Processing, Responding)
@@ -52,11 +52,11 @@ val conversingStates = setOf(Listening, Processing, Responding)
  * Because of limitations in Tasker, we cannot hold a reactive state, so we get
  * state pushed in through a companion object.
  */
-class AvaActivityRunner :
-    TaskerPluginRunnerConditionState<AvaActivityInput, Unit>() {
+class AstrionActivityRunner :
+    TaskerPluginRunnerConditionState<AstrionActivityInput, Unit>() {
     override fun getSatisfiedCondition(
         context: Context,
-        input: TaskerInput<AvaActivityInput>,
+        input: TaskerInput<AstrionActivityInput>,
         update: Unit?
     ): TaskerPluginResultCondition<Unit> {
         val filter = input.regular

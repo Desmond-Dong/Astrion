@@ -23,30 +23,30 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.ava.R
 import com.example.ava.ui.screens.settings.components.SwitchSetting
-import com.example.ava.ui.theme.AvaTheme
+import com.example.ava.ui.theme.AstrionTheme
 import com.joaomgcd.taskerpluginlibrary.config.TaskerPluginConfig
 import com.joaomgcd.taskerpluginlibrary.config.TaskerPluginConfigHelper
 import com.joaomgcd.taskerpluginlibrary.input.TaskerInput
 
-class AvaActivityHelper(config: TaskerPluginConfig<AvaActivityInput>) :
-    TaskerPluginConfigHelper<AvaActivityInput, Unit, AvaActivityRunner>(config) {
-    override val runnerClass = AvaActivityRunner::class.java
-    override val inputClass = AvaActivityInput::class.java
+class AstrionActivityHelper(config: TaskerPluginConfig<AstrionActivityInput>) :
+    TaskerPluginConfigHelper<AstrionActivityInput, Unit, AstrionActivityRunner>(config) {
+    override val runnerClass = AstrionActivityRunner::class.java
+    override val inputClass = AstrionActivityInput::class.java
     override val outputClass = Unit::class.java
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-class ActivityConfigAvaActivity : ComponentActivity(),
-    TaskerPluginConfig<AvaActivityInput> {
+class ActivityConfigAstrionActivity : ComponentActivity(),
+    TaskerPluginConfig<AstrionActivityInput> {
     override val context get() = applicationContext
-    private val taskerHelper by lazy { AvaActivityHelper(this) }
+    private val taskerHelper by lazy { AstrionActivityHelper(this) }
 
-    private var inputState = AvaActivityInput()
+    private var inputState = AstrionActivityInput()
 
-    override val inputForTasker: TaskerInput<AvaActivityInput>
+    override val inputForTasker: TaskerInput<AstrionActivityInput>
         get() = TaskerInput(inputState)
 
-    override fun assignFromInput(input: TaskerInput<AvaActivityInput>) {
+    override fun assignFromInput(input: TaskerInput<AstrionActivityInput>) {
         inputState = input.regular
     }
 
@@ -54,7 +54,7 @@ class ActivityConfigAvaActivity : ComponentActivity(),
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AvaTheme {
+            AstrionTheme {
                 var state by remember { mutableStateOf(inputState) }
 
                 Scaffold(
@@ -66,7 +66,7 @@ class ActivityConfigAvaActivity : ComponentActivity(),
                                 titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ),
                             title = {
-                                Text(stringResource(R.string.tasker_condition_ava_activity))
+                                Text(stringResource(R.string.tasker_condition_astrion_activity))
                             },
                             actions = {
                                 TextButton(

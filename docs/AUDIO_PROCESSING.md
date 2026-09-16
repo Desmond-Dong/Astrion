@@ -1,7 +1,7 @@
 # Audio Processing
 
 Many Android devices have some built in support for microphone audio processing that can for example take advantage of
-hardware acoustic echo cancellation and noise suppression. Ava exposes a few advanced audio processing settings that can be used to tune the microphone processing for specific devices and use-cases.
+hardware acoustic echo cancellation and noise suppression. Astrion exposes a few advanced audio processing settings that can be used to tune the microphone processing for specific devices and use-cases.
 
 > [!NOTE]
 > The exact implementation and support for audio processing varies widely between manufacturers and devices. Some experimentation will be required for specific devices and use-cases.

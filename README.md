@@ -1,4 +1,4 @@
-# Android Voice Assistant (Ava)
+# Android Voice Assistant (Astrion)
 
 Experimental Android voice assistant for [Home Assistant][homeassistant] that uses the [ESPHome][esphome] protocol.
 
@@ -9,8 +9,6 @@ Intended for turning your existing Android wall panel or similar into a local vo
 - It is constantly using the microphone to listen for the wake word, which is not only a privacy issue but also a battery drain. Android does not allow non-system apps to listen 'passively' like the built in assistants.
 
 Requires Android 8 or above.
-
-[![paypal](https://www.paypalobjects.com/en_GB/i/btn/btn_donate_LG.gif)](https://www.paypal.com/donate/?business=EU5MC92FG3JF6&no_recurring=0&currency_code=GBP)
 
 # Implemented
 - Local wake word detection using up to two microWakeWord models
@@ -55,8 +53,8 @@ Once connected, the satellite is fully configurable from within Home Assistant a
 Logs for the app can be sent to and displayed in Home Assistant's logs to help troubleshooting. See here for instructions on how to enable - [Obtaining logs from the device](https://www.home-assistant.io/integrations/esphome/#obtaining-logs-from-the-device)
 
 # Custom wake word models
-The app includes a default [set of wake words](https://github.com/brownard/Ava/tree/master/app/src/main/assets/wakeWords), however you can also specify a directory containing custom wake words supported by microWakeWord.  
-Create a directory on your device, copy the wake word model(s) as well as valid json file(s) describing each model ([example](https://github.com/brownard/Ava/blob/master/app/src/main/assets/wakeWords/okay_nabu.json)), a minimum valid example json is:
+The app includes a default [set of wake words](app/src/main/assets/wakeWords), however you can also specify a directory containing custom wake words supported by microWakeWord.  
+Create a directory on your device, copy the wake word model(s) as well as valid json file(s) describing each model ([example](app/src/main/assets/wakeWords/okay_nabu.json)), a minimum valid example json is:
 ```
 {
   "type": "micro",

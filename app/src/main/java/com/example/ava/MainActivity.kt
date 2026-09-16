@@ -12,7 +12,7 @@ import com.example.ava.permissions.VOICE_SATELLITE_PERMISSIONS
 import com.example.ava.ui.MainNavHost
 import com.example.ava.ui.services.ServiceViewModel
 import com.example.ava.ui.services.rememberLaunchWithMultiplePermissions
-import com.example.ava.ui.theme.AvaTheme
+import com.example.ava.ui.theme.AstrionTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AvaTheme {
+            AstrionTheme {
                 OnCreate()
                 MainNavHost()
             }

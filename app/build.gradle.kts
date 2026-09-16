@@ -20,7 +20,7 @@ android {
             project.ext.get("versionCode").toString().toInt() else 1
         versionName = if (project.ext.has("versionName"))
             project.ext.get("versionName").toString() else "0.0.0"
-        base.archivesName = "Ava-$versionName"
+        base.archivesName = "Astrion-$versionName"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Ava"
+rootProject.name = "Astrion"
 include(":app")
 include(":esphomeproto")
 include(":microfeatures")

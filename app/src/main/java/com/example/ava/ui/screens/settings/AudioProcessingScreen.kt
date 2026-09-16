@@ -19,7 +19,7 @@ import com.example.ava.ui.screens.settings.components.SelectSetting
 import com.example.ava.ui.screens.settings.components.SettingsList
 import com.example.ava.ui.screens.settings.components.SwitchSetting
 
-private const val HELP_URI = "https://github.com/brownard/Ava/blob/master/docs/AUDIO_PROCESSING.md"
+private const val HELP_URI = "https://github.com/Desmond-Dong/Astrion-ESPHome/blob/master/docs/AUDIO_PROCESSING.md"
 
 @Composable
 fun HelpButton(uri: String) {

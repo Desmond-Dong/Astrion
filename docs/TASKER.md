@@ -1,7 +1,6 @@
 # State of the Tasker integration
 
-Ava integrates with the paid [Tasker](https://tasker.joaoapps.com/) app to support automations.
-We will be tracking use cases and progress on [this issue](https://github.com/brownard/Ava/issues/49).
+Astrion integrates with the paid [Tasker](https://tasker.joaoapps.com/) app to support automations.
 
 You can also use the [Home Assistant Plug-In for Tasker](https://github.com/MarkAdamson/home-assistant-plugin-for-tasker)
 to query the voice assistant state via the Home Assistant server.
@@ -15,9 +14,9 @@ to query the voice assistant state via the Home Assistant server.
 - **Wake up satellite**: plays the wake sound (if enabled) and listens to voice commands as if the wake word was detected.
 - **Stop ringing**: stops the timer ringing sound, as if "stop" was said.
 
-## State Condition: Ava Activity
+## State Condition: Astrion Activity
 
-The `Ava Activity` state can be used to trigger tasks when the voice satellite enters or exits
+The `Astrion Activity` state can be used to trigger tasks when the voice satellite enters or exits
 specific states:
 
 - A conversation is happening (listening, thinking, replying)
