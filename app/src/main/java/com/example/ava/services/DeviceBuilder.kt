@@ -573,8 +573,6 @@ class DeviceBuilder @Inject constructor(
 
         /** Default wake word sensitivity, equal to the stock 0.97 cutoff. */
         const val DEFAULT_WAKE_WORD_SENSITIVITY = 0.03f
-
-            }
     }
 }
 

@@ -356,6 +356,21 @@ data class IrCodebook(
                 if (devices.isEmpty()) null else IrCodebook(devices)
             }.getOrNull()
         }
+
+        /**
+         * The JSON form: a direct `{"<device>": {"<button>": "<code>"}}` map,
+         * or the same map wrapped under a single `devices` key.
+         */
+        fun fromJson(json: String): IrCodebook? = runCatching {
+            if (json.isBlank()) return null
+            val element = panelJson.parseToJsonElement(json)
+            val obj = element.jsonObject
+            val target = if (obj.keys == WRAPPED_KEYS) obj.getValue(WRAPPED_KEY) else element
+            IrCodebook(panelJson.decodeFromJsonElement(target))
+        }.getOrNull()
+
+        private const val WRAPPED_KEY = "devices"
+        private val WRAPPED_KEYS = setOf(WRAPPED_KEY)
     }
 }
 

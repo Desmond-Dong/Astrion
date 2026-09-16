@@ -160,9 +160,20 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | switch / scene | `<domain>.turn_on / turn_off` |
 | media-player | `media_player.media_play_pause / media_next_track / volume_set …` |
 
-## 5. IR 码库 `astrion_ir_codes`（推荐：一行一键，无需 JSON）
+## 5. 红外：推荐走 Home Assistant 原生红外（ESPHome infrared 协议）
 
-**最简单写法**——一行一个按键，`设备 | 按键=码`：
+每个码库/设备都会以 **ESPHome `infrared` 实体**暴露，在 HA 2026.9+ 中即为
+**原生红外遥控器**：直接在 HA 里给这个 remote 实体配置命令（原生 UI/自动化/
+Broadlink 迁移均可），面板按键时自动 `remote.send_command` → HA →
+`infrared.transmit` → 面板硬件发射。**面板里不需要填任何红外码。**
+
+面板电视卡按键的派发顺序：本地码库命中 → 本地直发；否则 → `remote.send_command`
+交给 HA（原生红外即走这条）。
+
+### 可选：面板本地码库 `astrion_ir_codes`
+
+若想让某个设备脱离 HA 直接本地发射，才需要推送本地码库。支持极简行格式
+（一行一个按键，`设备 | 按键=码`）：
 
 ```
 # 注释
@@ -172,30 +183,10 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 ```
 
 码串支持三种格式（自动识别）：逗号时序、Broadlink base64、AES base64。
-设备名与布局里 tv 卡的 `name` 一致时按键本地直发。
+设备名与布局里 tv 卡的 `name` 一致时按键本地直发。也兼容完整 JSON：
+`{"小米电视": {"POWER": "...", "MUTE": "..."}}`。
 
-### 完整 JSON 形态（高级，可选）
-
-```json
-{
-  "小米电视": {
-    "POWER": "38000,9000,4500,560,560,560,1690,...",
-    "MUTE": "sGipAAECAwQFBgcICQ=="
-  },
-  "机顶盒": {
-    "POWER": "JgBMACHgERAQERAAHQAA"
-  }
-}
-```
-
-- **设备名必须与布局里 tv 卡的 `name` 一致**，按键名（外层键）与 entities 的
-  `key`/`value` 一致，面板按下时才会在本地直接发射（无 HA 往返）。
-- 支持三种码格式（与原 HaRemote 相同，自动识别）：
-  1. **逗号时序**：`频率,脉宽,脉宽,…`（µs，正负交替）；
-  2. **Broadlink base64**：首字节 0x26（IR）的 base64 包；
-  3. **AES base64**：原 AES/ECB 加密格式。
-- 每个"设备"同时暴露一个 `infrared` 实体，HA 可直接 `infrared.transmit`
-  原始时序（不打码库）。
+每个本地码库设备同时暴露一个 `infrared` 实体（原始时序直发）和逐键 `button`。
 
 ## 6. 物理按键绑定 `astrion_key_bindings`（推荐：一行一键，无需 JSON）
 
