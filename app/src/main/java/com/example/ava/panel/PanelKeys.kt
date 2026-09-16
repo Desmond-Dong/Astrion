@@ -2,6 +2,7 @@ package com.example.ava.panel
 
 import com.example.ava.services.ActivityNavigator
 import com.example.ava.services.HaActionBus
+import com.example.ava.services.SatelliteStateHolder
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
