@@ -4,6 +4,11 @@ App 端**没有任何设置界面**：启动即运行 ESPHome 卫星服务（端
 Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配置，删除应用数据也只
 需要 HA 重新推送一次配置即可恢复。
 
+**两步上手**：① ESPHome 集成采纳设备 → ② 把红外码库 JSON 写入
+`text.astrion_ir_codes` 即可遥控。面板布局（`astrion_layout`）是可选的：不推送时
+面板直接按码库生成默认房间；推送时也只需要极简形态（卡片 `name` + `entity_id`，
+其余字段都有缺省值，见 §4）。
+
 ---
 
 ## 1. 接入
@@ -12,7 +17,8 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 2. Home Assistant → 设置 → 设备与服务 → ESPHome 集成，采纳发现的设备
    （或手动用设备 IP + 端口 6053 添加）。
 
-采纳后设备上会出现这些实体（全部由 HA 侧控制）：
+采纳后设备上会出现这些实体（全部由 HA 侧控制；标 ☰ 的高级实体默认隐藏，
+在实体卡片里开启"显示"后才会出现在设备页）：
 
 | 实体 | 类型 | 用途 |
 |---|---|---|
@@ -38,6 +44,7 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `panel_page_visited` | event | 用户在面板上跳页时触发 `page_visited`（原 `astrion/page_visited`，HA 发起的跳页不触发） |
 | `panel_button_pressed` | event | 用户在面板上按遥控键时触发 `button_pressed`（原 `astrion/control_command`） |
 | `panel_pages` | text_sensor | 面板当前页面清单，逗号分隔（原 `astrion/navigate_list_upload`） |
+| `screen_saver_timeout` | number | 屏保空闲超时（秒，0–600，步进 5，默认 0=关闭）；无按键/触摸达到该时长后面板显示全屏时钟/日期/电量/HA 连接状态，任意按键或触摸即退出 |
 
 ## 3. 语音（麦克风 / 免唤醒 / 灵敏度 / 降噪）
 
@@ -242,3 +249,12 @@ automation:
 GitHub Actions 每次 push 到 master 会构建 debug APK（artifact `Astrion-debug-apk`）。
 替换系统原装应用参见需求文档 §8.4（PMS 清理 + /system/priv-app 替换 + 重启）。
 Manifest 已声明 HOME 类别，替换系统 launcher 后开机直接进入面板。
+
+## 10. 屏保 / 充电动画（§3.10.7）
+
+- **屏保**：把空闲秒数写入 `number.screen_saver_timeout` 即启用（0–600，0=关闭）。
+  面板无按键/触摸达到该时长后，显示全屏深色屏保：大号时钟（HH:mm）、本地日期、
+  电量（<20% 红色）+ 充电标记、HA 断连标记。任意**按键或触摸**立即退出，
+  按键仅用于唤醒、不会穿透到遥控页面（与原版 ScreenSaverDialog 行为一致）。
+- **充电动画**：运行中插入充电器时，屏幕上短暂显示"充电中 xx%"提示（约 3.5 秒，
+  无需配置，对应原版 ChargingAnimationManager）。

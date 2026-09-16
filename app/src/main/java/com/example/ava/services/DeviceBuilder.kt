@@ -31,6 +31,7 @@ import com.example.ava.panel.PanelIrController
 import com.example.ava.panel.irObjectId
 import com.example.ava.server.ServerImpl
 import com.example.ava.settings.AudioProcessingSettingsStore
+import com.example.ava.settings.DisplaySettingsStore
 import com.example.ava.settings.MicrophoneSettingsStore
 import com.example.ava.settings.PlayerSettingsStore
 import com.example.ava.settings.VoiceSatelliteSettingsStore
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.onEach
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
+import kotlin.math.roundToInt
 
 /**
  * Builds the ESPHome device from Home Assistant driven configuration only
@@ -65,6 +67,7 @@ class DeviceBuilder @Inject constructor(
     private val audioProcessingSettingsStore: AudioProcessingSettingsStore,
     private val playerSettingsStore: PlayerSettingsStore,
     private val panelConfigStore: PanelConfigStore,
+    private val displaySettingsStore: DisplaySettingsStore,
     private val irController: PanelIrController,
     private val activityNavigator: ActivityNavigator,
     private val haStatesStore: HomeAssistantStatesStore,
@@ -299,6 +302,9 @@ class DeviceBuilder @Inject constructor(
         // layout and IR codebook JSON into these text entities.
         entities += buildConfigEntities(keyAllocator)
 
+        // Display / power tuning (§3.10.7 screensaver)
+        entities += buildDisplayEntities(keyAllocator)
+
         // IR devices from the HA codebook
         entities += buildIrEntities(keyAllocator)
 
@@ -346,6 +352,27 @@ class DeviceBuilder @Inject constructor(
             )
         )
     }
+
+    /**
+     * Display / power tuning exposed to Home Assistant (§3.10.7): the idle
+     * seconds before the screensaver overlay shows, 0 disables it. The value
+     * is stored in [DisplaySettingsStore] and picked up live by the
+     * [com.example.ava.panel.ScreensaverController].
+     */
+    private fun buildDisplayEntities(
+        keyAllocator: EntityKeyAllocator
+    ): List<Entity> = listOf(
+        NumberEntity(
+            key = keyAllocator.next(),
+            name = "Screen Saver Timeout",
+            objectId = "screen_saver_timeout",
+            minValue = 0f,
+            maxValue = 600f,
+            step = 5f,
+            getState = displaySettingsStore.screenSaverTimeout.map { it.toFloat() },
+            setState = { seconds -> displaySettingsStore.screenSaverTimeout.set(seconds.roundToInt()) }
+        )
+    )
 
     private suspend fun buildIrEntities(keyAllocator: EntityKeyAllocator): List<Entity> {
         val codebook = panelConfigStore.irCodebook.first()

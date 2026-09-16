@@ -6,19 +6,26 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.example.ava.esphome.Connected
 import com.example.ava.panel.KeyPress
 import com.example.ava.panel.KeyRouter
 import com.example.ava.panel.PanelUiEvents
+import com.example.ava.panel.ScreensaverController
+import com.example.ava.services.SatelliteStateHolder
 import com.example.ava.services.VoiceSatelliteService
 import com.example.ava.ui.PanelNavHost
+import com.example.ava.ui.screens.panel.ScreensaverHost
 import com.example.ava.ui.theme.AstrionPanelTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -38,6 +45,12 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var panelUiEvents: PanelUiEvents
 
+    @Inject
+    lateinit var screensaverController: ScreensaverController
+
+    @Inject
+    lateinit var satelliteStateHolder: SatelliteStateHolder
+
     private var pendingLongPress: Runnable? = null
 
     private val permissionLauncher =
@@ -48,10 +61,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        screensaverController.start()
         setContent {
             AstrionPanelTheme {
                 OnCreate()
                 PanelNavHost(openCard = panelUiEvents.openCard)
+                val deviceState by satelliteStateHolder.deviceState.collectAsState()
+                ScreensaverHost(
+                    controller = screensaverController,
+                    haConnected = deviceState == Connected
+                )
             }
         }
     }
@@ -112,9 +131,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun dispatchKey(keyCode: Int, longPress: Boolean) {
+        // Any key first dismisses the screensaver without acting (§3.10.7:
+        // 屏保显示中任意按键即退出).
+        val wasScreensaverActive = screensaverController.active.value
+        screensaverController.onUserActivity()
+        if (wasScreensaverActive) return
         lifecycleScope.launch {
             keyRouter.dispatch(KeyPress(keyCode = keyCode, longPress = longPress))
         }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        screensaverController.onUserActivity()
+        return super.dispatchTouchEvent(ev)
     }
 
     private companion object {
