@@ -51,6 +51,9 @@ class VoiceSatelliteService() : LifecycleService() {
     @Inject
     lateinit var satelliteStateHolder: SatelliteStateHolder
 
+    @Inject
+    lateinit var raiseToWakeController: RaiseToWakeController
+
     private val wifiWakeLock = WifiWakeLock()
     private var voiceSatelliteNsd = AtomicReference<NsdRegistration?>(null)
     private val _voiceSatellite = MutableStateFlow<EspHomeDevice?>(null)
@@ -90,6 +93,9 @@ class VoiceSatelliteService() : LifecycleService() {
         startTaskerStateObserver()
         startPanelConfigObserver()
         startDeviceStatePublisher()
+        // Raise to wake (§3.8) follows the HA-configured threshold while the
+        // always-on service runs.
+        raiseToWakeController.start(lifecycleScope)
     }
 
     /** Mirrors the ESPHome device state for the always-on appliance UI. */
@@ -191,6 +197,7 @@ class VoiceSatelliteService() : LifecycleService() {
         )
 
     override fun onDestroy() {
+        raiseToWakeController.stop()
         _voiceSatellite.getAndUpdate { null }?.close()
         voiceSatelliteNsd.getAndSet(null)?.unregister(this)
         wifiWakeLock.release()

@@ -385,6 +385,7 @@ class DeviceBuilder @Inject constructor(
             key = keyAllocator.next(),
             name = "Raise To Wake Threshold",
             objectId = "raise_to_wake_threshold",
+            disabledByDefault = true,
             minValue = 0f,
             maxValue = 10f,
             step = 0.1f,

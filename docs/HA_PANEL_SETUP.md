@@ -45,6 +45,7 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `panel_button_pressed` | event | 用户在面板上按遥控键时触发 `button_pressed`（原 `astrion/control_command`） |
 | `panel_pages` | text_sensor | 面板当前页面清单，逗号分隔（原 `astrion/navigate_list_upload`） |
 | `screen_saver_timeout` | number | 屏保空闲超时（秒，0–600，步进 5，默认 0=关闭）；无按键/触摸达到该时长后面板显示全屏时钟/日期/电量/HA 连接状态，任意按键或触摸即退出 |
+| `raise_to_wake_threshold` | number ☰ | 抬手唤醒加速度阈值（m/s²，0–10，步进 0.1，默认 0=关闭）；面板熄屏时被拿起（加速度突变超阈值）即自动亮屏，判定间隔 3 秒防抖 |
 
 ## 3. 语音（麦克风 / 免唤醒 / 灵敏度 / 降噪）
 
@@ -258,3 +259,10 @@ Manifest 已声明 HOME 类别，替换系统 launcher 后开机直接进入面�
   按键仅用于唤醒、不会穿透到遥控页面（与原版 ScreenSaverDialog 行为一致）。
 - **充电动画**：运行中插入充电器时，屏幕上短暂显示"充电中 xx%"提示（约 3.5 秒，
   无需配置，对应原版 ChargingAnimationManager）。
+
+## 11. 抬手唤醒（§3.8）
+
+把 `number.raise_to_wake_threshold` 设为大于 0（建议先试 4，与原版 WakeupUtils
+灵敏度一致）即启用：面板熄屏时被拿起/移动，加速度突变（相对缓变重力基线的向量差）
+超过阈值就自动亮屏约 10 秒；3 秒内不重复触发，平时缓慢的转向/振动不会误触发。
+阈值 0（默认）关闭该功能；无加速度计的设备上设置后自动忽略。

@@ -31,6 +31,8 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
   HA 自动化可驱动面板跳页，面板操作也会回报 HA
 - 屏保：`screen_saver_timeout`（number，0=关闭）配置空闲超时，超时显示全屏
   时钟/日期/电量/HA 连接状态，任意按键/触摸退出；插入充电器时短暂显示充电动画
+- 抬手唤醒：`raise_to_wake_threshold`（number，加速度阈值 m/s²，0=关闭）在面板
+  熄屏时被拿起即自动亮屏（原版 WakeupUtils 的加速度判定，带 3 秒防抖）
 
 ## 语音卫星
 - 本地唤醒词（microWakeWord，最多两个模型 + 自定义模型目录）
@@ -64,7 +66,6 @@ push 到 master 自动触发 GitHub Actions：
 
 # Roadmap（后续批次）
 - Sendspin 多房间同步音频
-- 抬手唤醒
 - OTA 自更新通道
 - 云码库（astrion.lifex360.com）直连拉取
 
