@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.ava.esphome.Connected
+import com.example.ava.ota.OtaUpdateManager
 import com.example.ava.panel.KeyPress
 import com.example.ava.panel.KeyRouter
 import com.example.ava.panel.PanelUiEvents
@@ -25,6 +26,7 @@ import com.example.ava.panel.ScreensaverController
 import com.example.ava.services.SatelliteStateHolder
 import com.example.ava.services.VoiceSatelliteService
 import com.example.ava.ui.PanelNavHost
+import com.example.ava.ui.screens.panel.OtaUpdateBanner
 import com.example.ava.ui.screens.panel.ScreensaverHost
 import com.example.ava.ui.theme.AstrionPanelTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -51,6 +53,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var satelliteStateHolder: SatelliteStateHolder
 
+    @Inject
+    lateinit var otaUpdateManager: OtaUpdateManager
+
     private var pendingLongPress: Runnable? = null
 
     private val permissionLauncher =
@@ -71,6 +76,8 @@ class MainActivity : ComponentActivity() {
                     controller = screensaverController,
                     haConnected = deviceState == Connected
                 )
+                // OTA update prompt (§3.9/§8.6), above everything else.
+                OtaUpdateBanner(manager = otaUpdateManager)
             }
         }
     }

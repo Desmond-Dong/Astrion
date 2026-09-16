@@ -34,6 +34,12 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
 - 抬手唤醒：`raise_to_wake_threshold`（number，加速度阈值 m/s²，0=关闭）在面板
   熄屏时被拿起即自动亮屏（原版 WakeupUtils 的加速度判定，带 3 秒防抖）
 
+## OTA 自更新
+- HA 下发 `astrion_ota_manifest`（`{version, url, sha256, force?}`）+ 按需隐藏的
+  实体；版本更新时面板弹横幅，点按或 `astrion_ota_install` 按钮触发
+  下载 → SHA-256 校验 → 安装（root 走 `pm install -r`，无 root 走系统安装确认）
+- 完全本地化，不依赖云端 OTA 服务
+
 ## 语音卫星
 - 本地唤醒词（microWakeWord，最多两个模型 + 自定义模型目录）
 - 停止词、语音命令、播报与对话、计时器
@@ -66,7 +72,6 @@ push 到 master 自动触发 GitHub Actions：
 
 # Roadmap（后续批次）
 - Sendspin 多房间同步音频
-- OTA 自更新通道
 - 云码库（astrion.lifex360.com）直连拉取
 
 # Development

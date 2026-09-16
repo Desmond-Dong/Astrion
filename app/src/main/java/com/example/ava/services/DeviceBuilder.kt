@@ -26,6 +26,7 @@ import com.example.ava.esphome.infrared.InfraredManager
 import com.example.ava.esphome.voiceassistant.VoiceAssistant
 import com.example.ava.esphome.voiceassistant.VoiceInputImpl
 import com.example.ava.esphome.voiceassistant.VoiceOutputImpl
+import com.example.ava.ota.OtaUpdateManager
 import com.example.ava.panel.PanelConfigStore
 import com.example.ava.panel.PanelIrController
 import com.example.ava.panel.irObjectId
@@ -68,6 +69,7 @@ class DeviceBuilder @Inject constructor(
     private val playerSettingsStore: PlayerSettingsStore,
     private val panelConfigStore: PanelConfigStore,
     private val displaySettingsStore: DisplaySettingsStore,
+    private val otaUpdateManager: OtaUpdateManager,
     private val irController: PanelIrController,
     private val activityNavigator: ActivityNavigator,
     private val haStatesStore: HomeAssistantStatesStore,
@@ -312,6 +314,9 @@ class DeviceBuilder @Inject constructor(
         // Display / power tuning (§3.10.7 screensaver, §3.8 raise to wake)
         entities += buildDisplayEntities(keyAllocator)
 
+        // OTA self-update channel (§3.9/§8.6)
+        entities += buildOtaEntities(keyAllocator)
+
         // IR devices from the HA codebook
         entities += buildIrEntities(keyAllocator)
 
@@ -393,6 +398,39 @@ class DeviceBuilder @Inject constructor(
             setState = { displaySettingsStore.raiseToWakeThreshold.set(it) }
         )
     )
+
+    /**
+     * OTA self-update channel (§3.9/§8.6): Home Assistant pushes the update
+     * manifest JSON ({version, url, sha256, force?}) into the text entity;
+     * when its version is newer the panel shows an update banner and the
+     * button (or the banner) downloads, verifies and installs the APK. Both
+     * are advanced entities — hidden by default.
+     */
+    private suspend fun buildOtaEntities(
+        keyAllocator: EntityKeyAllocator
+    ): List<Entity> {
+        otaUpdateManager.restore()
+        return listOf(
+            TextEntity(
+                key = keyAllocator.next(),
+                name = "OTA Manifest",
+                objectId = "astrion_ota_manifest",
+                disabledByDefault = true,
+                initialState = otaUpdateManager.lastManifestJson(),
+                onText = { json -> otaUpdateManager.applyManifestJson(json) }
+            ),
+            ButtonEntity(
+                key = keyAllocator.next(),
+                name = "OTA Install",
+                objectId = "astrion_ota_install",
+                disabledByDefault = true,
+                onPress = {
+                    Timber.d("OTA install requested from Home Assistant")
+                    otaUpdateManager.installNow()
+                }
+            )
+        )
+    }
 
     private suspend fun buildIrEntities(keyAllocator: EntityKeyAllocator): List<Entity> {
         val codebook = panelConfigStore.irCodebook.first()

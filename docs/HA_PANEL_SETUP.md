@@ -46,6 +46,8 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `panel_pages` | text_sensor | 面板当前页面清单，逗号分隔（原 `astrion/navigate_list_upload`） |
 | `screen_saver_timeout` | number | 屏保空闲超时（秒，0–600，步进 5，默认 0=关闭）；无按键/触摸达到该时长后面板显示全屏时钟/日期/电量/HA 连接状态，任意按键或触摸即退出 |
 | `raise_to_wake_threshold` | number ☰ | 抬手唤醒加速度阈值（m/s²，0–10，步进 0.1，默认 0=关闭）；面板熄屏时被拿起（加速度突变超阈值）即自动亮屏，判定间隔 3 秒防抖 |
+| `astrion_ota_manifest` | text ☰ | **OTA 更新清单 JSON**（`{version, url, sha256, force?}`，见 §12）；version 比面板已装版本新时面板弹出更新横幅 |
+| `astrion_ota_install` | button ☰ | 触发一次 OTA 下载→SHA-256 校验→安装（root 走 `pm install -r`，无 root 走系统安装确认弹窗），等价于点按面板横幅上的"安装" |
 
 ## 3. 语音（麦克风 / 免唤醒 / 灵敏度 / 降噪）
 
@@ -266,3 +268,22 @@ Manifest 已声明 HOME 类别，替换系统 launcher 后开机直接进入面�
 灵敏度一致）即启用：面板熄屏时被拿起/移动，加速度突变（相对缓变重力基线的向量差）
 超过阈值就自动亮屏约 10 秒；3 秒内不重复触发，平时缓慢的转向/振动不会误触发。
 阈值 0（默认）关闭该功能；无加速度计的设备上设置后自动忽略。
+
+## 12. OTA 自更新（§3.9/§8.6）
+
+更新包不依赖云端服务，完全由 HA 驱动：把清单 JSON 写入
+`text.astrion_ota_manifest`：
+
+```json
+{"version": "1.2.1", "url": "https://example.com/Astrion-1.2.1.apk", "sha256": "<可选，APK 摘要>", "force": false}
+```
+
+- `version` 与面板已装版本做点分数值比较，只有更新时面板顶部才出现
+  "发现新版本" 横幅；`force: true` 表示收到清单后立即开始安装。
+- 点横幅上的"安装"或按 `button.astrion_ota_install`：下载 APK 到本地缓存 →
+  （有 sha256 时）流式校验 SHA-256 → 安装。设备有 root 时经
+  `su -c pm install -r`（APK 先暂存到 `/data/local/tmp/astrion_update.apk`）；
+  无 root 时走 PackageInstaller session，由系统弹出安装确认，用户确认后完成。
+- 安装期间横幅显示 下载中 x% → 校验 → 安装中；失败会显示原因（网络、校验、
+  root 不可用等）。
+- 该 text/button 实体默认隐藏（☰），需要在设备页启用后才会出现。
