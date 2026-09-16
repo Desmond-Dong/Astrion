@@ -63,7 +63,26 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
   `voice_recognition` 对唤醒词更友好。
 - **外放**：TTS/媒体通过 `media_player` 实体播报，音量/静音在 HA 中直接调节。
 
-## 4. 面板布局 `astrion_layout`
+## 4. 面板布局 `astrion_layout`（推荐：一行一个房间，无需 JSON）
+
+**最简单写法**——一行一个房间，等号后逗号分隔实体 id，类型/图标/状态全部自动：
+
+```
+客厅=remote.mi_tv, media_player.mi_tv | 电视
+卧室=light.bed, fan.bed
+```
+
+- `| 后面` 是该行唯一设备卡的显示别名（可省略）
+- 不带 `=` 的行表示"所有设备"房间：`light.ceiling, climate.ac`
+- `#` 开头为注释
+- 实体类型自动推断：light/climate/fan/cover/media_player/remote(→电视)/switch/scene/weather
+- 这些实体同时自动加入状态订阅，无需再填 `sync_entities`
+
+写进 `astrion_layout` 文本实体即生效。**只推 `astrion_ir_codes` 也行**——布局为空时会用码库自动生成"所有设备"房间。
+
+### 完整 JSON 形态（高级，可选）
+
+
 
 写入 JSON 即生效；面板 UI、导航 select 选项、HA 状态订阅清单都会随之重建。
 

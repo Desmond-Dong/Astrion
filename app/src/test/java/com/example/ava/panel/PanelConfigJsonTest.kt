@@ -83,6 +83,45 @@ class PanelConfigJsonTest {
     }
 
     @Test
+    fun `plain text layout lines parse without any json`() {
+        val text = """
+            # 注释行
+            客厅=remote.mi_tv, media_player.mi_tv | 电视
+            卧室=light.bed, fan.bed
+        """.trimIndent()
+
+        val layout = PanelLayout.parseFlexible(text)
+
+        assertNotNull(layout)
+        assertEquals(2, layout.rooms.size)
+        assertEquals("客厅", layout.rooms[0].title)
+        assertEquals(2, layout.rooms[0].cards.size)
+        // types inferred from the entity domain
+        assertEquals(PanelCardTypes.TV, layout.rooms[0].cards[0].resolvedType)
+        assertEquals(PanelCardTypes.MEDIA_PLAYER, layout.rooms[0].cards[1].resolvedType)
+        // | alias applies to single-entity lines
+        assertEquals("电视", layout.rooms[0].cards[0].name)
+        assertEquals("卧室", layout.rooms[1].title)
+        assertEquals(PanelCardTypes.LIGHT, layout.rooms[1].cards[0].resolvedType)
+        // entities auto-subscribed
+        assertEquals(
+            listOf("remote.mi_tv", "media_player.mi_tv", "light.bed", "fan.bed"),
+            layout.syncEntities
+        )
+    }
+
+    @Test
+    fun `bare entity list without room titles lands in the default room`() {
+        val layout = PanelLayout.parseFlexible("light.ceiling, climate.ac")
+
+        assertNotNull(layout)
+        assertEquals(1, layout.rooms.size)
+        assertEquals("所有设备", layout.rooms[0].title)
+        assertEquals(2, layout.rooms[0].cards.size)
+        assertEquals(PanelCardTypes.CLIMATE, layout.rooms[0].cards[1].resolvedType)
+    }
+
+    @Test
     fun `invalid or blank layout json returns null`() {
         assertNull(PanelLayout.fromJson("not json {"))
         assertNull(PanelLayout.fromJson(""))

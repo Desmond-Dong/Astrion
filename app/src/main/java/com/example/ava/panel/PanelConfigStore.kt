@@ -61,7 +61,8 @@ class PanelConfigStore @Inject constructor(
 
     val raw: Flow<PanelConfig> = settings.getFlow()
 
-    val layout: Flow<PanelLayout> = raw.map { PanelLayout.fromJson(it.layoutJson) ?: PanelLayout() }
+    val layout: Flow<PanelLayout> =
+        raw.map { PanelLayout.parseFlexible(it.layoutJson) ?: PanelLayout() }
 
     val irCodebook: Flow<IrCodebook> = raw.map { IrCodebook.fromJson(it.irCodesJson) ?: IrCodebook() }
 
@@ -106,13 +107,14 @@ class PanelConfigStore @Inject constructor(
     val syncEntities: Flow<List<String>> = layout.map { it.syncEntities }
 
     /**
-     * Applies layout JSON received from Home Assistant. Invalid JSON keeps the
-     * previous configuration.
+     * Applies layout configuration received from Home Assistant: full JSON or
+     * the plain per-line form (客厅=entity1, entity2). Invalid content keeps
+     * the previous configuration.
      *
      * @return true when the config was accepted (changed or confirmed).
      */
     suspend fun applyLayoutJson(json: String): Boolean = apply("layout", json) { current ->
-        if (PanelLayout.fromJson(json) == null) null
+        if (PanelLayout.parseFlexible(json) == null) null
         else current.copy(layoutJson = json.trim())
     }
 

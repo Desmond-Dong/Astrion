@@ -55,13 +55,82 @@ data class PanelLayout(
         fun fromJson(json: String): PanelLayout? = runCatching {
             if (json.isBlank()) null else panelJson.decodeFromString<PanelLayout>(json)
         }.getOrNull()
+
+        /**
+         * Accepts either the full JSON form or a plain-text form that needs no
+         * JSON at all — one line per room, comma-separated entity ids:
+         *
+         * ```
+         * 客厅=remote.mi_tv, media_player.mi_tv, light.ceiling
+         * 卧室=light.bed, fan.bed
+         * ```
+         *
+         * A line without `=` puts its entities into the default room
+         * "所有设备". Card types are inferred from the entity domain and the
+         * entities are auto-subscribed for state rendering. Lines starting
+         * with `#` are comments. Everything after a `|` on a line is the card
+         * display name: `客厅=light.ceiling | 吸顶灯`.
+         */
+        fun parseFlexible(text: String): PanelLayout? {
+            if (text.isBlank()) return null
+            if (text.trimStart().startsWith("{")) return fromJson(text)
+            return runCatching {
+                var defaultRoom: PanelRoom? = null
+                val rooms = mutableListOf<PanelRoom>()
+                val pages = mutableListOf<String>()
+                for (rawLine in text.lines()) {
+                    val line = rawLine.trim()
+                    if (line.isEmpty() || line.startsWith("#")) continue
+                    val (roomPart, entityPart, cardName) = splitLine(line)
+                    val entityIds = entityPart.split(',', '，')
+                        .map { it.trim() }
+                        .filter { it.contains('.') }
+                    if (entityIds.isEmpty()) {
+                        // A line with entities or a title only: extra page
+                        if (entityPart.isNotBlank() || roomPart.isNotBlank()) pages.add(roomPart.ifBlank { entityPart })
+                        continue
+                    }
+                    val cards = entityIds.map { entityId ->
+                        PanelCard(
+                            name = if (cardName.isNotBlank() && entityIds.size == 1) cardName else "",
+                            entities = listOf(PanelEntityRef(entityId = entityId))
+                        )
+                    }
+                    if (roomPart.isBlank() || roomPart == DEFAULT_ROOM_TITLE) {
+                        val room = defaultRoom ?: PanelRoom(DEFAULT_ROOM_TITLE).also {
+                            defaultRoom = it; rooms.add(it)
+                        }
+                        room.cards += cards
+                    } else {
+                        rooms.add(PanelRoom(roomPart, cards))
+                    }
+                }
+                PanelLayout(
+                    rooms = rooms,
+                    pages = pages.distinct(),
+                    syncEntities = rooms.flatMap { it.cards }
+                        .flatMap { it.entities }.map { it.entityId }.distinct()
+                )
+            }.getOrNull()
+        }
+
+        private fun splitLine(line: String): Triple<String, String, String> {
+            val titlePart = line.substringBefore('|').trim()
+            val cardName = line.substringAfter('|', "").trim()
+            val hasRoom = titlePart.contains('=')
+            val room = if (hasRoom) titlePart.substringBefore('=').trim() else ""
+            val entities = if (hasRoom) titlePart.substringAfter('=').trim() else titlePart
+            return Triple(room, entities, cardName)
+        }
+
+        const val DEFAULT_ROOM_TITLE = "所有设备"
     }
 }
 
 @Serializable
 data class PanelRoom(
     val title: String,
-    val cards: List<PanelCard> = emptyList(),
+    val cards: MutableList<PanelCard> = mutableListOf(),
 )
 
 /**
