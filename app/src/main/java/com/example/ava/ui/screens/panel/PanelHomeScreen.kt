@@ -160,7 +160,7 @@ fun PanelHomeScreen(
     val haStates by viewModel.haStates.collectAsStateWithLifecycle()
     val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
     val deviceState by viewModel.deviceState.collectAsStateWithLifecycle()
-    val micMuted by viewModel.micMuted.collectAsStateWithLifecycle(initial = false)
+    val micMuted by viewModel.micMuted.collectAsStateWithLifecycle(initialValue = false)
 
     val rooms = remember(layout) { layout.rooms }
 

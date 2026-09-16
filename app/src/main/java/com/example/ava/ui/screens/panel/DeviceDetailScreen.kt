@@ -103,8 +103,13 @@ class DeviceDetailViewModel @Inject constructor(
     fun turnOn() = action { cardController.turnOn(it.primaryEntity?.entityId ?: return@action) }
     fun turnOff() = action { cardController.turnOff(it.primaryEntity?.entityId ?: return@action) }
 
-    fun lightOn(brightnessPct: Int? = null, kelvin: Int? = null) = action {
-        cardController.lightTurnOn(it.primaryEntity?.entityId ?: return@action, brightnessPct, kelvin)
+    fun lightOn(brightnessPct: Int? = null, kelvin: Int? = null, rgb: List<Int>? = null) = action {
+        cardController.lightTurnOn(
+            it.primaryEntity?.entityId ?: return@action,
+            brightnessPct,
+            kelvin,
+            rgb
+        )
     }
 
     fun lightOff() = action { cardController.lightTurnOff(it.primaryEntity?.entityId ?: return@action) }
