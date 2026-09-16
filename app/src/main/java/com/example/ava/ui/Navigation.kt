@@ -1,35 +1,44 @@
 package com.example.ava.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.ava.ui.screens.home.HomeScreen
-import com.example.ava.ui.screens.settings.AudioProcessingScreen
-import com.example.ava.ui.screens.settings.SettingsScreen
+import androidx.navigation.toRoute
+import com.example.ava.ui.screens.panel.DeviceDetailScreen
+import com.example.ava.ui.screens.panel.PanelHomeScreen
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.Serializable
 
 @Serializable
 object Home
 
+/** Device detail page, addressed by the layout card id. */
 @Serializable
-object Settings
-
-@Serializable
-object AudioProcessing
+data class DeviceDetail(val cardId: String)
 
 @Composable
-fun MainNavHost() {
+fun PanelNavHost(openCard: SharedFlow<String>) {
     val navController = rememberNavController()
+
+    // Key bindings can open card pages from anywhere (§3.10.5 快捷键).
+    LaunchedEffect(navController) {
+        openCard.collect { cardId ->
+            navController.navigate(DeviceDetail(cardId))
+        }
+    }
+
     NavHost(navController = navController, startDestination = Home) {
         composable<Home> {
-            HomeScreen(navController)
+            PanelHomeScreen(navController)
         }
-        composable<Settings> {
-            SettingsScreen(navController)
-        }
-        composable<AudioProcessing> {
-            AudioProcessingScreen(navController)
+        composable<DeviceDetail> { backStackEntry ->
+            val route = backStackEntry.toRoute<DeviceDetail>()
+            DeviceDetailScreen(
+                navController = navController,
+                cardId = route.cardId
+            )
         }
     }
 }

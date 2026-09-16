@@ -17,45 +17,50 @@ import com.example.ava.esphome.entities.InfraredEntity
 import com.example.ava.esphome.entities.MediaPlayerEntity
 import com.example.ava.esphome.entities.SelectEntity
 import com.example.ava.esphome.entities.SwitchEntity
+import com.example.ava.esphome.entities.TextEntity
 import com.example.ava.esphome.entities.TextSensorEntity
 import com.example.ava.esphome.infrared.InfraredManager
 import com.example.ava.esphome.voiceassistant.VoiceAssistant
 import com.example.ava.esphome.voiceassistant.VoiceInputImpl
 import com.example.ava.esphome.voiceassistant.VoiceOutputImpl
-import com.example.ava.server.ServerImpl
-import com.example.ava.settings.ActivitySettingsStore
-import com.example.ava.settings.AudioProcessingSettingsStore
-import com.example.ava.settings.HaStateSettingsStore
-import com.example.ava.settings.IrDeviceSettings
-import com.example.ava.settings.IrSettingsStore
+import com.example.ava.panel.PanelConfigStore
+import com.example.ava.panel.PanelIrController
+import com.example.ava.panel.irObjectId
 import com.example.ava.settings.MicrophoneSettingsStore
 import com.example.ava.settings.PlayerSettingsStore
 import com.example.ava.settings.VoiceSatelliteSettingsStore
 import com.example.ava.settings.availableStopWords
 import com.example.ava.settings.availableWakeWords
-import com.example.ava.settings.irObjectId
 import com.example.esphomeproto.api.VoiceAssistantFeature
 import com.example.esphomeproto.api.deviceInfoResponse
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicReference
-import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 
+/**
+ * Builds the ESPHome device from Home Assistant driven configuration only
+ * (§5.2/§6.1): the panel exposes the config text entities themselves plus the
+ * entity families derived from them. Nothing is configured inside the app —
+ * layout, IR codebooks, HA entity sync list and navigation pages all arrive
+ * through Home Assistant, and the entity list is rebuilt whenever that config
+ * changes ([PanelConfigStore.version]).
+ */
 class DeviceBuilder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val satelliteSettingsStore: VoiceSatelliteSettingsStore,
     private val microphoneSettingsStore: MicrophoneSettingsStore,
     private val audioProcessingSettingsStore: AudioProcessingSettingsStore,
     private val playerSettingsStore: PlayerSettingsStore,
-    private val irSettingsStore: IrSettingsStore,
-    private val activitySettingsStore: ActivitySettingsStore,
+    private val panelConfigStore: PanelConfigStore,
+    private val irController: PanelIrController,
     private val activityNavigator: ActivityNavigator,
     private val haStatesStore: HomeAssistantStatesStore,
-    private val haStateSettingsStore: HaStateSettingsStore
+    private val haActionBus: HaActionBus
 ) {
     suspend fun buildVoiceSatellite(coroutineContext: CoroutineContext): EspHomeDevice {
         val satelliteSettings = satelliteSettingsStore.get()
@@ -85,7 +90,8 @@ class DeviceBuilder @Inject constructor(
             logger = TimberLogger(),
             entities = buildEntities(coroutineContext, voiceOutput, deviceHolder),
             haStatesStore = haStatesStore,
-            getHaSyncedEntityIds = { haStateSettingsStore.get().syncedEntityIds }
+            getHaSyncedEntityIds = { panelConfigStore.syncEntities.first() },
+            haActionBus = haActionBus
         )
         deviceHolder.set(device)
         return device
@@ -99,7 +105,7 @@ class DeviceBuilder @Inject constructor(
         val keyAllocator = EntityKeyAllocator(0)
         val entities = mutableListOf<Entity>()
 
-        // Voice satellite controls
+        // Voice satellite controls (state-backed entities, set from HA)
         entities += MediaPlayerEntity(
             key = keyAllocator.next(),
             name = "Media Player",
@@ -129,7 +135,41 @@ class DeviceBuilder @Inject constructor(
             getState = playerSettingsStore.repeatTimerFinishedSound
         ) { playerSettingsStore.repeatTimerFinishedSound.set(it) }
 
-        // Media metadata text sensors (SendSpin media cards)
+        // Wake/stop word selection lives in Home Assistant (select entities),
+        // replacing the old in-app settings screen.
+        val micSettings = microphoneSettingsStore.get()
+        val wakeWordOptions = micSettings.availableWakeWords(context).map { it.id }
+        val stopWordOptions = micSettings.availableStopWords(context).map { it.id }
+        entities += SelectEntity(
+            key = keyAllocator.next(),
+            name = "Wake Word",
+            objectId = "wake_word",
+            options = wakeWordOptions,
+            initialState = micSettings.wakeWord,
+            onSelect = { microphoneSettingsStore.wakeWord.set(it) }
+        )
+        entities += SelectEntity(
+            key = keyAllocator.next(),
+            name = "Second Wake Word",
+            objectId = "second_wake_word",
+            options = listOf(WAKE_WORD_NONE) + wakeWordOptions,
+            initialState = micSettings.secondWakeWord ?: WAKE_WORD_NONE,
+            onSelect = { value ->
+                microphoneSettingsStore.secondWakeWord.set(
+                    value.takeUnless { it == WAKE_WORD_NONE }
+                )
+            }
+        )
+        entities += SelectEntity(
+            key = keyAllocator.next(),
+            name = "Stop Word",
+            objectId = "stop_word",
+            options = stopWordOptions,
+            initialState = micSettings.stopWord,
+            onSelect = { microphoneSettingsStore.stopWord.set(it) }
+        )
+
+        // Media metadata text sensors (media cards)
         entities += TextSensorEntity(
             key = keyAllocator.next(),
             name = "Media Title",
@@ -143,7 +183,11 @@ class DeviceBuilder @Inject constructor(
             getState = voiceOutput.metadata.map { it.artist }
         )
 
-        // Infrared devices
+        // HA-driven configuration channel: Home Assistant writes the panel
+        // layout and IR codebook JSON into these text entities.
+        entities += buildConfigEntities(keyAllocator)
+
+        // IR devices from the HA codebook
         entities += buildIrEntities(keyAllocator)
 
         // Gateway/activity controls
@@ -152,40 +196,67 @@ class DeviceBuilder @Inject constructor(
         return entities
     }
 
-    private suspend fun buildIrEntities(
+    private suspend fun buildConfigEntities(
         keyAllocator: EntityKeyAllocator
     ): List<Entity> {
-        val irSettings = irSettingsStore.get()
-        val devices = irSettings.devices.filter { it.enabled }
-        if (devices.isEmpty()) return emptyList()
+        val config = panelConfigStore.raw.first()
+        return listOf(
+            TextEntity(
+                key = keyAllocator.next(),
+                name = "Panel Layout",
+                objectId = "astrion_layout",
+                initialState = config.layoutJson,
+                onText = { json -> panelConfigStore.applyLayoutJson(json) }
+            ),
+            TextEntity(
+                key = keyAllocator.next(),
+                name = "IR Codes",
+                objectId = "astrion_ir_codes",
+                initialState = config.irCodesJson,
+                onText = { json -> panelConfigStore.applyIrCodesJson(json) }
+            ),
+            TextEntity(
+                key = keyAllocator.next(),
+                name = "Key Bindings",
+                objectId = "astrion_key_bindings",
+                initialState = config.keyBindingsJson,
+                onText = { json -> panelConfigStore.applyKeyBindingsJson(json) }
+            )
+        )
+    }
+
+    private suspend fun buildIrEntities(keyAllocator: EntityKeyAllocator): List<Entity> {
+        val codebook = panelConfigStore.irCodebook.first()
+        if (codebook.devices.isEmpty()) return emptyList()
 
         val infraredManager = InfraredManager(context)
         if (!infraredManager.available) {
-            Timber.w("IR devices configured but the box has no IR emitter, skipping")
+            Timber.w("IR codebook configured but the box has no IR emitter, skipping")
             return emptyList()
         }
 
         val entities = mutableListOf<Entity>()
-        for (device in devices) {
+        for ((deviceName, buttons) in codebook.devices) {
+            val deviceSlug = irObjectId(deviceName)
             // Raw timings transmitter (ESPHome infrared service)
             entities += InfraredEntity(
                 key = keyAllocator.next(),
-                name = device.name,
-                objectId = device.objectId ?: irObjectId(device.name),
+                name = deviceName,
+                objectId = "ir_$deviceSlug",
                 transmit = { carrierFrequencyHz, timings, repeatCount ->
-                    infraredManager.transmit(carrierFrequencyHz, timings, repeatCount)
+                    irController.transmitTimings(carrierFrequencyHz, timings, repeatCount)
                 }
             )
             // One button per named IR command in the codebook
-            for ((buttonName, timings) in device.buttons) {
+            for (buttonName in buttons.keys) {
                 entities += ButtonEntity(
                     key = keyAllocator.next(),
-                    name = "$buttonName (${device.name})",
-                    objectId = device.irButtonObjectId(buttonName),
+                    name = "$buttonName ($deviceName)",
+                    objectId = "ir_${deviceSlug}_${irObjectId(buttonName)}",
                     onPress = {
-                        infraredManager.transmit(
-                            device.defaultCarrierFrequencyHz, timings, 1
-                        )
+                        if (!irController.transmit(deviceName, buttonName)) {
+                            Timber.w("No decodable code for $deviceName/$buttonName")
+                        }
                     }
                 )
             }
@@ -198,8 +269,10 @@ class DeviceBuilder @Inject constructor(
         keyAllocator: EntityKeyAllocator,
         deviceHolder: AtomicReference<EspHomeDevice?>
     ): List<Entity> {
-        val irDevices = irSettingsStore.get().devices.filter { it.enabled }.map { it.name }
-        val activityPages = (irDevices + activitySettingsStore.get().pages).distinct()
+        val layout = panelConfigStore.layout.first()
+        val activityPages = (layout.rooms.map { it.title } + layout.pages)
+            .filter { it.isNotBlank() }
+            .distinct()
         val scope = CoroutineScope(coroutineContext + Job())
         val initialPage = activityNavigator.currentPage.value
             .ifEmpty { activityPages.firstOrNull() ?: "" }
@@ -224,8 +297,8 @@ class DeviceBuilder @Inject constructor(
                 sentinel = NAVIGATE_SENTINEL,
                 scope = scope
             ),
-            // B-Type: persistent current-scene select. Kept in sync with both
-            // the panel pages and Home Assistant automations.
+            // B-Type: persistent current-activity select. Kept in sync with
+            // both the panel pages and Home Assistant automations.
             SelectEntity(
                 key = keyAllocator.next(),
                 name = "Current Activity",
@@ -250,9 +323,6 @@ class DeviceBuilder @Inject constructor(
             )
         )
     }
-
-    private fun IrDeviceSettings.irButtonObjectId(buttonName: String): String =
-        "${objectId ?: irObjectId(name)}_${irObjectId(buttonName)}"
 
     private fun MicrophoneSettingsStore.toVoiceInput() = VoiceInputImpl(
         microphone = audioProcessingSettingsStore.toMicrophone(),
@@ -308,6 +378,9 @@ class DeviceBuilder @Inject constructor(
          * resetting to the sentinel (milliseconds).
          */
         const val NAVIGATE_RESET_MILLIS = 300L
+
+        /** "No second wake word" option of the second wake word select. */
+        const val WAKE_WORD_NONE = "None"
     }
 }
 

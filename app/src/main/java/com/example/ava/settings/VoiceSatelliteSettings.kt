@@ -24,10 +24,12 @@ const val DEFAULT_MAC_ADDRESS = "00:00:00:00:00:00"
 
 @Serializable
 data class VoiceSatelliteSettings(
-    val name: String = "Android Voice Assistant",
+    val name: String = "Astrion",
     val serverPort: Int = DEFAULT_SERVER_PORT,
     val macAddress: String = DEFAULT_MAC_ADDRESS,
-    val autoStart: Boolean = false,
+    // The panel is a dedicated appliance: the satellite service always starts
+    // with the app and everything else is configured from Home Assistant.
+    val autoStart: Boolean = true,
     val trustAllSSLCerts: Boolean = false,
 )
 

@@ -9,6 +9,7 @@ import com.example.ava.server.DEFAULT_SERVER_PORT
 import com.example.ava.server.Server
 import com.example.ava.server.ServerException
 import com.example.ava.server.ServerImpl
+import com.example.ava.services.HaActionBus
 import com.example.ava.services.HaEntityState
 import com.example.ava.services.HomeAssistantStatesStore
 import com.example.esphomeproto.api.DeviceInfoRequest
@@ -69,6 +70,7 @@ class EspHomeDevice(
     entities: Iterable<Entity> = emptyList(),
     private val haStatesStore: HomeAssistantStatesStore? = null,
     private val getHaSyncedEntityIds: suspend () -> List<String> = { emptyList() },
+    private val haActionBus: HaActionBus? = null,
 ) : AutoCloseable {
     private val entities = entities.toList()
     private val _state = MutableStateFlow<EspHomeState>(Disconnected)
@@ -88,9 +90,19 @@ class EspHomeDevice(
         startConnectedChangedListener()
         listenForEntityStateChanges()
         listenForVoiceAssistantResponses()
+        listenForHaActions()
         if (logger != null)
             listenForLogResponses()
     }
+
+    /**
+     * Forwards device → Home Assistant service call requests to the connected
+     * client (no-op messages are silently dropped while disconnected, the
+     * server just has no connection to write to).
+     */
+    private fun listenForHaActions() = haActionBus?.requests
+        ?.onEach { sendMessage(it) }
+        ?.launchIn(scope)
 
     private fun startServer() {
         server.start(port)

@@ -1,0 +1,147 @@
+package com.example.ava.panel
+
+import android.content.Context
+import androidx.datastore.dataStoreFile
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
+import timber.log.Timber
+import javax.inject.Inject
+import javax.inject.Singleton
+
+private const val SETTINGS_FILE_NAME = "panel_config.json"
+
+/**
+ * Raw configuration strings received from Home Assistant, persisted so the
+ * panel keeps its layout and IR codebook across restarts without HA having to
+ * re-push them.
+ */
+@Serializable
+data class PanelConfig(
+    /** Raw JSON of [PanelLayout] received through the `astrion_layout` text entity. */
+    val layoutJson: String = "",
+    /** Raw JSON of [IrCodebook] received through the `astrion_ir_codes` text entity. */
+    val irCodesJson: String = "",
+    /** Raw JSON of [PanelKeyBindings] received through the `astrion_key_bindings` text entity. */
+    val keyBindingsJson: String = "",
+)
+
+private val DEFAULT = PanelConfig()
+
+/**
+ * Store of the HA-driven panel configuration. Home Assistant writes config
+ * JSON into the panel's text entities; this store parses, persists and
+ * re-exposes it as typed flows for the UI and the ESPHome entity builders.
+ */
+class PanelConfigStore @Inject constructor(
+    @ApplicationContext context: Context
+) {
+    private val settings = com.example.ava.settings.SettingsStoreImpl(
+        default = DEFAULT,
+        produceFile = { context.dataStoreFile(SETTINGS_FILE_NAME) },
+        serializer = PanelConfig.serializer()
+    )
+
+    private val _version = MutableStateFlow(0)
+
+    /**
+     * Bumped every time the configuration content actually changes. The
+     * satellite service observes this to rebuild the ESPHome entity list
+     * (IR codebook changes add/remove button entities).
+     */
+    val version: StateFlow<Int> = _version.asStateFlow()
+
+    val raw: Flow<PanelConfig> = settings.getFlow()
+
+    val layout: Flow<PanelLayout> = raw.map { PanelLayout.fromJson(it.layoutJson) ?: PanelLayout() }
+
+    val irCodebook: Flow<IrCodebook> = raw.map { IrCodebook.fromJson(it.irCodesJson) ?: IrCodebook() }
+
+    val keyBindings: Flow<PanelKeyBindings> =
+        raw.map { PanelKeyBindings.fromJson(it.keyBindingsJson) ?: PanelKeyBindings() }
+
+    /**
+     * Home Assistant entity ids the panel subscribes to, parsed from the
+     * layout (`sync_entities`). `entity.attribute` entries are preserved for
+     * attribute-level subscriptions.
+     */
+    val syncEntities: Flow<List<String>> = layout.map { it.syncEntities }
+
+    /**
+     * Applies layout JSON received from Home Assistant. Invalid JSON keeps the
+     * previous configuration.
+     *
+     * @return true when the config was accepted (changed or confirmed).
+     */
+    suspend fun applyLayoutJson(json: String): Boolean = apply("layout", json) { current ->
+        if (PanelLayout.fromJson(json) == null) null
+        else current.copy(layoutJson = json.trim())
+    }
+
+    /**
+     * Applies IR codebook JSON received from Home Assistant. Invalid JSON
+     * keeps the previous codebook.
+     */
+    suspend fun applyIrCodesJson(json: String): Boolean = apply("ir_codes", json) { current ->
+        if (IrCodebook.fromJson(json) == null) null
+        else current.copy(irCodesJson = json.trim())
+    }
+
+    /**
+     * Applies physical key binding JSON received from Home Assistant. Invalid
+     * JSON keeps the previous bindings.
+     */
+    suspend fun applyKeyBindingsJson(json: String): Boolean =
+        apply("key_bindings", json) { current ->
+            if (PanelKeyBindings.fromJson(json) == null) null
+            else current.copy(keyBindingsJson = json.trim())
+        }
+
+    private suspend fun apply(
+        tag: String,
+        json: String,
+        transform: (PanelConfig) -> PanelConfig?
+    ): Boolean {
+        val current = settings.get()
+        val updated = transform(current)
+        if (updated == null) {
+            Timber.w("Rejected invalid $tag config from Home Assistant (${json.length} chars)")
+            return false
+        }
+        if (updated != current) {
+            settings.update { updated }
+            Timber.i("Panel $tag config updated (${json.length} chars), bumping version")
+            _version.value += 1
+        }
+        return true
+    }
+}
+
+@Suppress("unused")
+@Module
+@InstallIn(SingletonComponent::class)
+object PanelConfigModule {
+    @Provides
+    @Singleton
+    fun providePanelConfigStore(@ApplicationContext context: Context): PanelConfigStore =
+        PanelConfigStore(context)
+}
+
+/**
+ * Derives an ESPHome safe object id from a display name.
+ */
+fun irObjectId(name: String): String {
+    val cleaned = name.trim().lowercase()
+        .map { if (it.isLetterOrDigit()) it else '_' }
+        .joinToString(separator = "")
+        .trim('_')
+    return cleaned.ifEmpty { "ir_device" }
+}

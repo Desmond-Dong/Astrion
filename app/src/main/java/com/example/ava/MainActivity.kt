@@ -1,44 +1,124 @@
 package com.example.ava
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import com.example.ava.permissions.VOICE_SATELLITE_PERMISSIONS
-import com.example.ava.ui.MainNavHost
-import com.example.ava.ui.services.ServiceViewModel
-import com.example.ava.ui.services.rememberLaunchWithMultiplePermissions
-import com.example.ava.ui.theme.AstrionTheme
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.example.ava.panel.KeyPress
+import com.example.ava.panel.KeyRouter
+import com.example.ava.panel.PanelUiEvents
+import com.example.ava.services.VoiceSatelliteService
+import com.example.ava.ui.PanelNavHost
+import com.example.ava.ui.theme.AstrionPanelTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+/**
+ * The appliance main screen: launches the satellite service (always) and
+ * shows the remote UI. There are no in-app settings — everything is
+ * configured from Home Assistant through the ESPHome integration.
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private val serviceViewModel: ServiceViewModel by viewModels()
 
-    @OptIn(ExperimentalMaterial3Api::class)
+    @Inject
+    lateinit var keyRouter: KeyRouter
+
+    @Inject
+    lateinit var panelUiEvents: PanelUiEvents
+
+    private var pendingLongPress: Runnable? = null
+
+    private val permissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            if (it.values.all { granted -> granted }) startSatelliteService()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AstrionTheme {
+            AstrionPanelTheme {
                 OnCreate()
-                MainNavHost()
+                PanelNavHost(openCard = panelUiEvents.openCard)
             }
         }
     }
 
     @Composable
-    fun OnCreate() {
-        val permissionsLauncher = rememberLaunchWithMultiplePermissions(
-            onPermissionGranted = { serviceViewModel.autoStartServiceIfRequired() }
-        )
+    private fun OnCreate() {
         DisposableEffect(Unit) {
-            permissionsLauncher.launch(VOICE_SATELLITE_PERMISSIONS)
+            if (hasAllPermissions()) {
+                startSatelliteService()
+            } else {
+                permissionLauncher.launch(requiredPermissions())
+            }
             onDispose { }
         }
+    }
+
+    private fun hasAllPermissions(): Boolean = requiredPermissions().all {
+        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requiredPermissions(): Array<String> = buildList {
+        add(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.toTypedArray()
+
+    private fun startSatelliteService() {
+        val intent = Intent(this, VoiceSatelliteService::class.java)
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    // ── Physical keys (§3.10.4/§3.10.5) ─────────────────────────────────
+    // Short press fires on key-up, long press after 800ms on key-down
+    // (original BaseActivity LONG_PRESS_TIMEOUT_MS). Every key is consumed:
+    // the panel is a dedicated appliance, keys never reach the system.
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (pendingLongPress == null) {
+            val posted = Runnable {
+                pendingLongPress = null
+                dispatchKey(keyCode, longPress = true)
+            }
+            pendingLongPress = posted
+            window.decorView.postDelayed(posted, LONG_PRESS_TIMEOUT_MS)
+        }
+        return true
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        val posted = pendingLongPress
+        if (posted != null) {
+            window.decorView.removeCallbacks(posted)
+            pendingLongPress = null
+            dispatchKey(keyCode, longPress = false)
+        }
+        return true
+    }
+
+    private fun dispatchKey(keyCode: Int, longPress: Boolean) {
+        lifecycleScope.launch {
+            keyRouter.dispatch(KeyPress(keyCode = keyCode, longPress = longPress))
+        }
+    }
+
+    private companion object {
+        /** Original BaseActivity long press threshold. */
+        const val LONG_PRESS_TIMEOUT_MS = 800L
     }
 }

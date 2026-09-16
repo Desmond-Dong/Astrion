@@ -20,8 +20,11 @@ import com.example.ava.utils.setTrustAllSSLCertificates
 import com.example.ava.utils.translate
 import com.example.ava.wakelocks.WifiWakeLock
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -41,6 +44,12 @@ class VoiceSatelliteService() : LifecycleService() {
 
     @Inject
     lateinit var deviceBuilder: DeviceBuilder
+
+    @Inject
+    lateinit var panelConfigStore: com.example.ava.panel.PanelConfigStore
+
+    @Inject
+    lateinit var satelliteStateHolder: SatelliteStateHolder
 
     private val wifiWakeLock = WifiWakeLock()
     private var voiceSatelliteNsd = AtomicReference<NsdRegistration?>(null)
@@ -78,7 +87,15 @@ class VoiceSatelliteService() : LifecycleService() {
         updateNotificationOnStateChanges()
         startNetworkSettingsObserver()
         startTaskerStateObserver()
+        startPanelConfigObserver()
+        startDeviceStatePublisher()
     }
+
+    /** Mirrors the ESPHome device state for the always-on appliance UI. */
+    private fun startDeviceStatePublisher() = _voiceSatellite
+        .flatMapLatest { it?.state ?: emptyFlow() }
+        .onEach { satelliteStateHolder.set(it) }
+        .launchIn(lifecycleScope)
 
     class VoiceSatelliteBinder(val service: VoiceSatelliteService) : Binder()
 
@@ -92,24 +109,49 @@ class VoiceSatelliteService() : LifecycleService() {
         lifecycleScope.launch {
             // already started?
             if (_voiceSatellite.value == null) {
-                Timber.d("Starting voice satellite")
-                startForeground(
-                    2,
-                    createVoiceSatelliteServiceNotification(
-                        this@VoiceSatelliteService,
-                        Stopped.translate(resources)
-                    )
-                )
-                satelliteSettingsStore.ensureMacAddressIsSet()
-                val settings = satelliteSettingsStore.get()
-                _voiceSatellite.value =
-                    deviceBuilder.buildVoiceSatellite(lifecycleScope.coroutineContext)
-                        .apply { start() }
-                voiceSatelliteNsd.set(registerVoiceSatelliteNsd(settings))
-                wifiWakeLock.acquire()
+                startSatellite()
             }
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
+    private suspend fun startSatellite() {
+        Timber.d("Starting voice satellite")
+        startForeground(
+            2,
+            createVoiceSatelliteServiceNotification(
+                this@VoiceSatelliteService,
+                Stopped.translate(resources)
+            )
+        )
+        satelliteSettingsStore.ensureMacAddressIsSet()
+        val settings = satelliteSettingsStore.get()
+        _voiceSatellite.value =
+            deviceBuilder.buildVoiceSatellite(lifecycleScope.coroutineContext)
+                .apply { start() }
+        voiceSatelliteNsd.set(registerVoiceSatelliteNsd(settings))
+        wifiWakeLock.acquire()
+    }
+
+    /**
+     * Rebuilds the ESPHome device when Home Assistant pushes new panel config:
+     * the entity list (IR codebook buttons, navigate select options) is derived
+     * from it. Debounced so a layout + IR codes push collapses into one rebuild.
+     */
+    @OptIn(FlowPreview::class)
+    private fun startPanelConfigObserver() = lifecycleScope.launch {
+        panelConfigStore.version
+            .drop(1)
+            .debounce(CONFIG_REBUILD_DEBOUNCE_MS)
+            .collect {
+                if (_voiceSatellite.value != null) {
+                    Timber.i("Panel config changed, rebuilding the ESPHome device")
+                    _voiceSatellite.getAndUpdate { null }?.close()
+                    voiceSatelliteNsd.getAndSet(null)?.unregister(this@VoiceSatelliteService)
+                    startSatellite()
+                }
+            }
     }
 
     fun startNetworkSettingsObserver() = satelliteSettingsStore.trustAllSSLCerts.onEach {
@@ -152,5 +194,11 @@ class VoiceSatelliteService() : LifecycleService() {
 
     companion object {
         const val TAG = "VoiceSatelliteService"
+
+        /**
+         * Wait for Home Assistant to finish pushing all config text entities
+         * (layout + IR codes) before rebuilding the device entity list.
+         */
+        const val CONFIG_REBUILD_DEBOUNCE_MS = 3000L
     }
 }
