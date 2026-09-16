@@ -330,9 +330,10 @@ class OtaUpdateManager @Inject constructor(
         commitReceiverRegistered = true
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiveContext: Context?, intent: Intent?) {
-                val status = intent?.getIntExtra(
+                intent ?: return
+                val status = intent.getIntExtra(
                     PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE
-                ) ?: PackageInstaller.STATUS_FAILURE
+                )
                 when (status) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         val confirm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -355,7 +356,7 @@ class OtaUpdateManager @Inject constructor(
                     }
 
                     else -> {
-                        val message = intent.getStringExtra(PackageInstaller.EXTRA_MESSAGE)
+                        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                             ?: "安装确认失败"
                         Timber.w("OTA PackageInstaller failed: $message")
                         _installState.value = OtaInstallState.Failed(message)
