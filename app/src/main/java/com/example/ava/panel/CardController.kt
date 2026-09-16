@@ -268,6 +268,20 @@ class CardController @Inject constructor(
                         lightTurnOn(entityId, brightnessPct = ((brightness ?: 100f) - 10f).toInt()); true
                     }
 
+                    // 色温 ±100K（原版 92/93=色温，仅灯支持色温时消费）
+                    92, 93 -> {
+                        val kelvin = haStatesStore.states.value["$entityId.color_temp_kelvin"]
+                            ?.state?.toIntOrNull()
+                        if (kelvin == null) {
+                            false
+                        } else {
+                            val next = (kelvin + if (keyCode == 93) 100 else -100)
+                                .coerceIn(2000, 6500)
+                            lightTurnOn(entityId, kelvin = next)
+                            true
+                        }
+                    }
+
                     132 -> {
                         if (state == "on") lightTurnOff(entityId) else lightTurnOn(entityId); true
                     }

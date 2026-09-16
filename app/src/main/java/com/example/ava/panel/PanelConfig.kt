@@ -90,9 +90,9 @@ data class PanelLayout(
                         if (entityPart.isNotBlank() || roomPart.isNotBlank()) pages.add(roomPart.ifBlank { entityPart })
                         continue
                     }
-                    val cards = entityIds.map { entityId ->
+                    val cards = entityIds.mapIndexed { index, entityId ->
                         PanelCard(
-                            name = if (cardName.isNotBlank() && entityIds.size == 1) cardName else "",
+                            name = if (index == 0) cardName else "",
                             entities = listOf(PanelEntityRef(entityId = entityId))
                         )
                     }

@@ -9,6 +9,7 @@ import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import androidx.annotation.RequiresPermission
 import com.example.ava.esphome.microphone.Microphone
 import kotlinx.coroutines.flow.Flow
@@ -76,18 +77,46 @@ class AudioRecordMicrophone(
             mode = audioMode
             setSpeakerphoneCompat(useSpeakerphone)
         }
-        audioRecord = AudioRecord(
-            audioSource,
-            sampleRateInHz,
-            channelConfig,
-            audioFormat,
-            bufferSize * 2
-        ).apply {
-            check(state == AudioRecord.STATE_INITIALIZED) { "Failed to initialize AudioRecord" }
+        // Never let an unsupported audio source (e.g. an API 29+ source on an
+        // older device) crash the panel: fall back to the default source.
+        val safeSource = if (isAudioSourceSupported(audioSource)) {
+            audioSource
+        } else {
+            Timber.w("Unsupported audio source $audioSource, falling back to default")
+            DEFAULT_AUDIO_SOURCE
+        }
+        audioRecord = runCatching {
+            AudioRecord(
+                safeSource,
+                sampleRateInHz,
+                channelConfig,
+                audioFormat,
+                bufferSize * 2
+            ).apply {
+                check(state == AudioRecord.STATE_INITIALIZED) { "Failed to initialize AudioRecord" }
+            }
+        }.getOrElse {
+            Timber.e(it, "AudioRecord init failed for source $safeSource, retrying with default")
+            AudioRecord(
+                DEFAULT_AUDIO_SOURCE,
+                sampleRateInHz,
+                channelConfig,
+                audioFormat,
+                bufferSize * 2
+            ).apply {
+                check(state == AudioRecord.STATE_INITIALIZED) { "Failed to initialize AudioRecord" }
+            }
+        }.apply {
             setupAudioEffects()
             Timber.d("Starting microphone")
             startRecording()
         }
+    }
+
+    private fun isAudioSourceSupported(source: Int): Boolean = when (source) {
+        MediaRecorder.AudioSource.VOICE_PERFORMANCE -> Build.VERSION.SDK_INT >= 29
+        MediaRecorder.AudioSource.UNPROCESSED -> Build.VERSION.SDK_INT >= 30
+        else -> source >= 0
     }
 
     /**

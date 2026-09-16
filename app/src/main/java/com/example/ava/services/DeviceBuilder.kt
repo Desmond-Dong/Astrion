@@ -609,15 +609,23 @@ class DeviceBuilder @Inject constructor(
         /** Default wake word sensitivity, equal to the stock 0.97 cutoff. */
         const val DEFAULT_WAKE_WORD_SENSITIVITY = 0.03f
 
-        /** Android audio source options exposed to Home Assistant. */
-        val AUDIO_SOURCE_OPTIONS = listOf(
-            "voice_recognition" to MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            "voice_communication" to MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            "mic" to MediaRecorder.AudioSource.MIC,
-            "camcorder" to MediaRecorder.AudioSource.CAMCORDER,
-            "unprocessed" to MediaRecorder.AudioSource.UNPROCESSED,
-            "voice_performance" to MediaRecorder.AudioSource.VOICE_PERFORMANCE,
-        )
+        /** Android audio source options exposed to Home Assistant. Sources
+         * introduced in newer API levels are only offered where supported —
+         * selecting an unsupported source would crash the mic (defended in
+         * AudioRecordMicrophone, but better not to offer it at all). */
+        val AUDIO_SOURCE_OPTIONS: List<Pair<String, Int>>
+            get() = buildList {
+                add("voice_recognition" to MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                add("voice_communication" to MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                add("mic" to MediaRecorder.AudioSource.MIC)
+                add("camcorder" to MediaRecorder.AudioSource.CAMCORDER)
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    add("voice_performance" to MediaRecorder.AudioSource.VOICE_PERFORMANCE)
+                }
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    add("unprocessed" to MediaRecorder.AudioSource.UNPROCESSED)
+                }
+            }
     }
 }
 
