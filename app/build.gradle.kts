@@ -25,13 +25,29 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("panel") {
+            // Stable signing key so CI artifacts can be installed as
+            // in-place updates on the panel (CI debug keystores are
+            // regenerated per runner and would never match).
+            storeFile = rootProject.file("keystore/astrion.keystore")
+            storePassword = "astrion2026"
+            keyAlias = "astrion"
+            keyPassword = "astrion2026"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("panel")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("panel")
         }
     }
     compileOptions {
