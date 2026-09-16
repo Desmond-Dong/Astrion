@@ -3,6 +3,8 @@ package com.example.ava.panel
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
 
 /**
  * Card types, matching the original `aiks-*` RosCard family (§4) rendered
@@ -174,9 +176,10 @@ data class IrCodebook(
          */
         fun fromJson(json: String): IrCodebook? = runCatching {
             if (json.isBlank()) return null
-            val direct = panelJson.decodeFromString<Map<String, Map<String, String>>>(json)
-            if (direct.keys == WRAPPED_KEYS) IrCodebook(direct.getValue(WRAPPED_KEY))
-            else IrCodebook(direct)
+            val element = panelJson.parseToJsonElement(json)
+            val obj = element.jsonObject
+            val target = if (obj.keys == WRAPPED_KEYS) obj.getValue(WRAPPED_KEY) else element
+            IrCodebook(panelJson.decodeFromJsonElement(target))
         }.getOrNull()
 
         private const val WRAPPED_KEY = "devices"

@@ -23,6 +23,9 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
 - 红外发射：**逗号时序 / Broadlink base64 / AES base64** 三格式自动识别（`ConsumerIrManager`，38kHz）
 - 码库由 HA 下发（`astrion_ir_codes`），按键本地直发；未命中走 `remote.send_command`
 - 设备 → HA 服务调用（`HomeassistantActionRequest`），卡片控制无需自定义集成
+- 面板 → HA 事件上行：用户跳页/按遥控键以 event 实体（`panel_page_visited`/
+  `panel_button_pressed`）+ `panel_pages` 页面清单上报，对应原集成的
+  `page_visited`/`control_command`/`navigate_list_upload`，自动化可订阅
 - 物理按键：短按/长按动态语义跟随当前设备页（原版物理键体系）+ HA 下发的按键绑定
 - 导航：`navigate`（A 型，300ms 复位）与 `current_activity`（B 型持久）select，
   HA 自动化可驱动面板跳页，面板操作也会回报 HA

@@ -14,6 +14,7 @@ import com.example.ava.esphome.android.microphone.audioRecordMicrophoneFlow
 import com.example.ava.esphome.android.wakeword.MicroWakeWord
 import com.example.ava.esphome.entities.ButtonEntity
 import com.example.ava.esphome.entities.Entity
+import com.example.ava.esphome.entities.EventEntity
 import com.example.ava.esphome.entities.InfraredEntity
 import com.example.ava.esphome.entities.MediaPlayerEntity
 import com.example.ava.esphome.entities.NumberEntity
@@ -67,7 +68,8 @@ class DeviceBuilder @Inject constructor(
     private val irController: PanelIrController,
     private val activityNavigator: ActivityNavigator,
     private val haStatesStore: HomeAssistantStatesStore,
-    private val haActionBus: HaActionBus
+    private val haActionBus: HaActionBus,
+    private val eventHub: com.example.ava.panel.PanelEventHub
 ) {
     suspend fun buildVoiceSatellite(coroutineContext: CoroutineContext): EspHomeDevice {
         val satelliteSettings = satelliteSettingsStore.get()
@@ -265,6 +267,34 @@ class DeviceBuilder @Inject constructor(
             getState = voiceOutput.metadata.map { it.artist }
         )
 
+        // Panel → HA event uplink (原 astrion/page_visited + control_command)
+        entities += EventEntity(
+            key = keyAllocator.next(),
+            name = "Page Visited",
+            objectId = "panel_page_visited",
+            eventTypes = listOf("page_visited"),
+            events = eventHub.pageVisited.map { "page_visited" }
+        )
+        entities += EventEntity(
+            key = keyAllocator.next(),
+            name = "Button Pressed",
+            objectId = "panel_button_pressed",
+            eventTypes = listOf("button_pressed"),
+            events = eventHub.buttonPressed.map { "button_pressed" }
+        )
+        // The panel's page list, mirrored to HA (原 navigate_list_upload)
+        entities += TextSensorEntity(
+            key = keyAllocator.next(),
+            name = "Panel Pages",
+            objectId = "panel_pages",
+            getState = panelConfigStore.layout.map { layout ->
+                (layout.rooms.map { it.title } + layout.pages)
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .joinToString(",")
+            }
+        )
+
         // HA-driven configuration channel: Home Assistant writes the panel
         // layout and IR codebook JSON into these text entities.
         entities += buildConfigEntities(keyAllocator)
@@ -381,7 +411,8 @@ class DeviceBuilder @Inject constructor(
                 onSelect = { page ->
                     if (page != NAVIGATE_SENTINEL) {
                         Timber.d("Navigating to page: $page")
-                        activityNavigator.setPage(page)
+                        // HA-initiated: not announced as page_visited
+                        activityNavigator.setPage(page, PageSource.AUTO)
                     }
                 },
                 autoResetAfterMs = NAVIGATE_RESET_MILLIS,
@@ -398,7 +429,7 @@ class DeviceBuilder @Inject constructor(
                 initialState = initialPage,
                 onSelect = { page ->
                     Timber.d("Activity changed to: $page")
-                    activityNavigator.setPage(page)
+                    activityNavigator.setPage(page, PageSource.AUTO)
                 },
                 scope = scope,
                 externalState = activityNavigator.currentPage

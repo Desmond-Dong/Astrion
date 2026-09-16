@@ -35,6 +35,9 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `media_title` / `media_artist` | text_sensor | 面板媒体元数据 |
 | `<设备名>`（每个码库设备） | infrared | 直发原始时序（ESPHome infrared 服务） |
 | `<按键> (<设备名>)`（每个码库按键） | button | 单键红外发射 |
+| `panel_page_visited` | event | 用户在面板上跳页时触发 `page_visited`（原 `astrion/page_visited`，HA 发起的跳页不触发） |
+| `panel_button_pressed` | event | 用户在面板上按遥控键时触发 `button_pressed`（原 `astrion/control_command`） |
+| `panel_pages` | text_sensor | 面板当前页面清单，逗号分隔（原 `astrion/navigate_list_upload`） |
 
 ## 3. 语音（麦克风 / 免唤醒 / 灵敏度 / 降噪）
 
@@ -214,7 +217,27 @@ automation:
 
 > 注意：布局/码库/绑定是三份独立 JSON，建议各放一个 `input_text` 分别同步。
 
-## 8. 部署到设备（HA100）
+## 8. 面板 → Home Assistant 事件
+
+原 astrion 集成的 bus 事件在 ESPHome 里以 event 实体承载（ESPHome 事件不携带
+payload，需要细节时配合 `current_activity` / `panel_pages` 读取）：
+
+```yaml
+automation:
+  - alias: 有人在面板上操作了电视
+    trigger:
+      - platform: state
+        entity_id: event.panel_button_pressed
+    action:
+      - service: notify.mobile_app
+        data:
+          message: "面板按下了遥控键（当前页面：{{ states('select.current_activity') }}）"
+```
+
+面板本地新增/修改布局后，`panel_pages` 会自动上报新的页面清单；HA 发起的
+`navigate`/`current_activity` 变更不会回环触发 `panel_page_visited`。
+
+## 9. 部署到设备（HA100）
 
 GitHub Actions 每次 push 到 master 会构建 debug APK（artifact `Astrion-debug-apk`）。
 替换系统原装应用参见需求文档 §8.4（PMS 清理 + /system/priv-app 替换 + 重启）。

@@ -17,6 +17,7 @@ class CardController @Inject constructor(
     private val haActionBus: HaActionBus,
     private val irController: PanelIrController,
     private val haStatesStore: HomeAssistantStatesStore,
+    private val eventHub: PanelEventHub,
 ) {
     // ── TV remote keys ──────────────────────────────────────────────────
 
@@ -26,6 +27,9 @@ class CardController @Inject constructor(
      * (§4.1 服务分派, ESPHome 化: astrion.send_command → remote.send_command).
      */
     suspend fun pressTvKey(card: PanelCard, key: String) {
+        // Panel-initiated key presses are announced to Home Assistant
+        // (原 astrion/control_command).
+        eventHub.announceButtonPressed()
         val ref = card.entities.firstOrNull { it.key.equals(key, ignoreCase = true) }
             ?: PanelEntityRef(key = key, entityId = card.primaryEntity?.entityId ?: "")
         when (ref.entityDomain) {
