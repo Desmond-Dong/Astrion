@@ -14,8 +14,6 @@ import com.example.ava.wakelocks.ScreenWakeLock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -61,12 +59,10 @@ class RaiseToWakeController @Inject constructor(
     fun start(scope: CoroutineScope) {
         if (observeJob?.isActive == true) return
         observeJob = scope.launch {
-            displaySettingsStore.raiseToWakeThreshold
-                .onEach { value ->
-                    threshold = value
-                    updateListener()
-                }
-                .collect()
+            displaySettingsStore.raiseToWakeThreshold.collect { value ->
+                threshold = value
+                updateListener()
+            }
         }
     }
 
