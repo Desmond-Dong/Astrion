@@ -23,6 +23,7 @@ import com.example.ava.esphome.entities.SwitchEntity
 import com.example.ava.esphome.entities.TextEntity
 import com.example.ava.esphome.entities.TextSensorEntity
 import com.example.ava.esphome.infrared.InfraredManager
+import com.example.ava.esphome.voiceassistant.VadConfig
 import com.example.ava.esphome.voiceassistant.VoiceAssistant
 import com.example.ava.esphome.voiceassistant.VoiceInputImpl
 import com.example.ava.esphome.voiceassistant.VoiceOutputImpl
@@ -52,6 +53,7 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /**
  * Builds the ESPHome device from Home Assistant driven configuration only
@@ -106,7 +108,17 @@ class DeviceBuilder @Inject constructor(
             voiceAssistant = VoiceAssistant(
                 coroutineContext = coroutineContext,
                 voiceInput = microphoneSettingsStore.toVoiceInput(wakeWordDetector),
-                voiceOutput = voiceOutput
+                voiceOutput = voiceOutput,
+                // Device-side end-of-speech (VAD): finish the audio stream
+                // locally when the user stops speaking instead of waiting for
+                // the server-side VAD, which never fires on some setups.
+                vadConfig = {
+                    VadConfig(
+                        silenceThreshold = microphoneSettingsStore.vadThreshold.get(),
+                        silenceDurationMs =
+                            (microphoneSettingsStore.vadTimeout.get() * 1000).roundToLong()
+                    )
+                }
             ),
             logger = TimberLogger(),
             entities = buildEntities(coroutineContext, voiceOutput, deviceHolder, scope),
@@ -203,6 +215,30 @@ class DeviceBuilder @Inject constructor(
             getState = microphoneSettingsStore.wakeWordSensitivity
                 .map { it ?: DEFAULT_WAKE_WORD_SENSITIVITY },
             setState = { microphoneSettingsStore.wakeWordSensitivity.set(it) }
+        )
+        // Device-side end-of-speech (VAD) tuning: the panel detects the
+        // trailing silence itself and closes the audio stream
+        // (`VoiceAssistantAudio.end`) so the conversation no longer depends
+        // on the HA-side VAD. A threshold of 0 disables the local detector.
+        entities += NumberEntity(
+            key = keyAllocator.next(),
+            name = "VAD Threshold",
+            objectId = "vad_threshold",
+            minValue = 0f,
+            maxValue = 0.1f,
+            step = 0.001f,
+            getState = microphoneSettingsStore.vadThreshold,
+            setState = { microphoneSettingsStore.vadThreshold.set(it) }
+        )
+        entities += NumberEntity(
+            key = keyAllocator.next(),
+            name = "VAD Timeout",
+            objectId = "vad_timeout",
+            minValue = 0.3f,
+            maxValue = 5f,
+            step = 0.1f,
+            getState = microphoneSettingsStore.vadTimeout,
+            setState = { microphoneSettingsStore.vadTimeout.set(it) }
         )
 
         // Microphone capture: built-in mic on the platform default voice

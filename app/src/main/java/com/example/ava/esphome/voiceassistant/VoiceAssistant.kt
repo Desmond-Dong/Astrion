@@ -46,6 +46,7 @@ class VoiceAssistant(
     coroutineContext: CoroutineContext,
     val voiceInput: VoiceInput,
     val voiceOutput: VoiceOutput,
+    private val vadConfig: suspend () -> VadConfig = { VadConfig.DISABLED }
 ) : AutoCloseable {
     private val scope = CoroutineScope(
         coroutineContext + Job(coroutineContext.job) + CoroutineName("${this.javaClass.simpleName} Scope")
@@ -260,7 +261,8 @@ class VoiceAssistant(
             voiceInput.isStreaming = it
         },
         stateChanged = { _state.value = it },
-        ended = { onTtsFinished(it) }
+        ended = { onTtsFinished(it) },
+        vadConfig = vadConfig
     )
 
     private suspend fun doStopAssistant() {

@@ -31,6 +31,18 @@ data class MicrophoneSettings(
      * default cutoff.
      */
     val wakeWordSensitivity: Float? = null,
+    /**
+     * Device-side end-of-speech (VAD) silence threshold, as a fraction of
+     * full scale. Audio averaging below this level counts as silence; `0`
+     * disables the local detector and falls back to the server-side VAD.
+     */
+    val vadThreshold: Float = 0.008f,
+    /**
+     * Device-side end-of-speech (VAD) silence timeout in seconds: how long
+     * the audio must stay silent after speech before the panel finishes the
+     * utterance on its own.
+     */
+    val vadTimeout: Float = 1.2f,
 )
 
 private val DEFAULT = MicrophoneSettings()
@@ -92,6 +104,25 @@ interface MicrophoneSettingsStore : SettingsStore<MicrophoneSettings> {
         get() = setting(
             get = { wakeWordSensitivity },
             set = { copy(wakeWordSensitivity = it) }
+        )
+
+    /**
+     * Device-side end-of-speech (VAD) silence threshold; `0` disables the
+     * local end-of-speech detection.
+     */
+    val vadThreshold: SettingState<Float>
+        get() = setting(
+            get = { vadThreshold },
+            set = { copy(vadThreshold = it) }
+        )
+
+    /**
+     * Device-side end-of-speech (VAD) silence timeout in seconds.
+     */
+    val vadTimeout: SettingState<Float>
+        get() = setting(
+            get = { vadTimeout },
+            set = { copy(vadTimeout = it) }
         )
 
     /**

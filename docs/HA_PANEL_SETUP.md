@@ -33,6 +33,8 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `enable_wake_sound` / `repeat_timer_sound` | switch | 语音提示音 |
 | `wake_word` / `second_wake_word` / `stop_word` | select | 唤醒词/停止词选择（`second_wake_word` 选 `None` 表示不启用） |
 | `wake_word_sensitivity` | number | 唤醒词灵敏度 0.01–0.50（阈值 = 1 − 灵敏度，默认 0.03 即模型默认 0.97 阈值），运行时即时生效 |
+| `vad_threshold` | number | 本地说话结束检测（设备端 VAD）静音阈值 0–0.1（步进 0.001，默认 0.008 = 满幅的 0.8%）；`0` = 关闭本地检测，回退为等待 HA 侧 VAD（见 §3） |
+| `vad_timeout` | number | 本地说话结束检测的静音时长（秒，0.3–5，步进 0.1，默认 1.2）；说完话静音达到该时长后面板主动结束语音上传 |
 | `wake_assistant` | button | 远程触发一次免唤醒对话（等同按设备麦克风键） |
 | `noise_suppression` / `echo_cancellation` / `auto_gain` | switch ☰ | 硬件降噪/回声消除/自动增益（机带麦克风，挂载到采集 session，设备不支持时自动跳过）。麦克风固定为机带默认源，语音固定外放，无需选择 |
 | `media_title` / `media_artist` | text_sensor | 面板媒体元数据 |
@@ -56,6 +58,12 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
   调灵敏度（默认 0.03 = 模型默认阈值 0.97；调大更灵敏、误唤醒也会增多），即时生效。
 - **麦克风**：固定使用机带麦克风（原官方应用同款调用），无需选择；硬件
   降噪/回声消除/自动增益默认开启，可用开关逐项调节。
+- **说话结束判定（本地 VAD）**：面板在推流的同时做静音检测——说完话（静音持续
+  `vad_timeout` 秒、且前面有真实语音，音量阈值 `vad_threshold`）即向 HA 发送
+  "音频结束"帧并进入识别阶段，**不依赖 HA 侧 VAD**。部分 HA 配置/设备上服务端
+  VAD 始终不触发，表现为一直停在"聆听中"、没有任何响应，此时保持默认即可。
+  对话收尾太快（说话中间停顿被截断）就调大 `vad_timeout`；环境太吵把末尾噪声
+  当语音就调大 `vad_threshold`；设 `vad_threshold = 0` 可完全关闭本地检测。
 - **外放**：语音一律外放（扬声器），TTS/媒体通过 `media_player` 实体播报，
   音量/静音在 HA 中直接调节。
 

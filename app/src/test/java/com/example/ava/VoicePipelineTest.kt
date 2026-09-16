@@ -3,7 +3,9 @@ package com.example.ava
 import com.example.ava.esphome.Connected
 import com.example.ava.esphome.EspHomeState
 import com.example.ava.esphome.voiceassistant.Listening
+import com.example.ava.esphome.voiceassistant.Processing
 import com.example.ava.esphome.voiceassistant.Responding
+import com.example.ava.esphome.voiceassistant.VadConfig
 import com.example.ava.esphome.voiceassistant.VoicePipeline
 import com.example.ava.stubs.StubVoiceOutput
 import com.example.esphomeproto.api.VoiceAssistantAnnounceFinished
@@ -26,14 +28,16 @@ class VoicePipelineTest {
         sendMessage: suspend (MessageLite) -> Unit = {},
         listeningChanged: (Boolean) -> Unit = {},
         stateChanged: (EspHomeState) -> Unit = {},
-        ended: suspend (continueConversation: Boolean) -> Unit = {}
+        ended: suspend (continueConversation: Boolean) -> Unit = {},
+        vadConfig: suspend () -> VadConfig = { VadConfig.DISABLED }
     ) = VoicePipeline(
         scope = this,
         voiceOutput = voiceOutput,
         sendMessage = sendMessage,
         listeningChanged = listeningChanged,
         stateChanged = stateChanged,
-        ended = ended
+        ended = ended,
+        vadConfig = vadConfig
     )
 
     @Test
@@ -331,4 +335,74 @@ class VoicePipelineTest {
 
         assert(errorPlayed)
     }
+
+    @Test
+    fun when_local_vad_detects_end_of_speech_should_finish_audio_stream() = runTest {
+        val sentMessages = mutableListOf<MessageLite>()
+        var listening = true
+        var state: EspHomeState = Listening
+        val pipeline = createPipeline(
+            sendMessage = { sentMessages.add(it) },
+            listeningChanged = { listening = it },
+            stateChanged = { state = it },
+            vadConfig = {
+                VadConfig(silenceThreshold = 0.008f, silenceDurationMs = 1, minSpeechDurationMs = 0)
+            }
+        )
+
+        pipeline.handleEvent(voiceAssistantEventResponse {
+            eventType = VoiceAssistantEvent.VOICE_ASSISTANT_RUN_START
+        })
+
+        // Speech followed by a short pause: the local detector should end the
+        // stream with an empty end-of-audio frame
+        pipeline.processMicAudio(ByteString.copyFrom(speechChunk()))
+        Thread.sleep(5)
+        pipeline.processMicAudio(ByteString.copyFrom(silentChunk()))
+        // Once out of the Listening state further audio is dropped entirely
+        pipeline.processMicAudio(ByteString.copyFrom(silentChunk()))
+
+        assertEquals(Processing, state)
+        assertEquals(false, listening)
+        assertEquals(3, sentMessages.size)
+        val endFrame = sentMessages.last() as VoiceAssistantAudio
+        assertEquals(true, endFrame.end)
+        assertEquals(0, endFrame.data.size())
+    }
+
+    @Test
+    fun when_local_vad_disabled_should_wait_for_server_vad() = runTest {
+        val sentMessages = mutableListOf<MessageLite>()
+        var state: EspHomeState = Listening
+        val pipeline = createPipeline(
+            sendMessage = { sentMessages.add(it) },
+            stateChanged = { state = it }
+        )
+
+        pipeline.handleEvent(voiceAssistantEventResponse {
+            eventType = VoiceAssistantEvent.VOICE_ASSISTANT_RUN_START
+        })
+        pipeline.processMicAudio(ByteString.copyFrom(speechChunk()))
+        Thread.sleep(5)
+        pipeline.processMicAudio(ByteString.copyFrom(silentChunk()))
+
+        assertEquals(Listening, state)
+        assert(sentMessages.isNotEmpty())
+        assert(sentMessages.all { it is VoiceAssistantAudio && !it.end })
+    }
+
+    private fun speechChunk(): ByteArray {
+        // Little-endian 16-bit samples of amplitude ~15872 (well above the
+        // default threshold of 0.008 * 32768 = 262).
+        val bytes = ByteArray(64)
+        var i = 0
+        while (i < bytes.size) {
+            bytes[i] = 0x00
+            bytes[i + 1] = 0x3E
+            i += 2
+        }
+        return bytes
+    }
+
+    private fun silentChunk(): ByteArray = ByteArray(64)
 }

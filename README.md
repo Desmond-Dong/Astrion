@@ -47,9 +47,13 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
 - 停止词、语音命令、播报与对话、计时器
 - **麦克风实体键免唤醒对话**：任何页面按下设备上的语音键（X9/HA10=131、
   HA100=133）直接开始 Assist 对话；HA 侧 `wake_assistant` 按钮等价触发
+- **本地说话结束检测（VAD）**：说完话后面板主动结束音频流，不依赖 HA 侧 VAD
+  （部分设备/配置上服务端 VAD 不触发、会一直停在"聆听中"）；阈值/静音时长用
+  `vad_threshold` / `vad_timeout` number 实体调节，阈值 0 = 关闭
 - 唤醒词/停止词/灵敏度/降噪全部是 ESPHome 实体，在 HA 中配置并即时生效：
   - `wake_word` / `second_wake_word` / `stop_word`（select）
   - `wake_word_sensitivity`（number，阈值 = 1 − 灵敏度）
+  - `vad_threshold` / `vad_timeout`（number，本地说话结束检测）
   - `audio_source` / `communication_mode` / `speakerphone` /
     `noise_suppression` / `echo_cancellation` / `auto_gain`
     （硬件降噪三件套挂载到采集 session，见 [音频处理](docs/AUDIO_PROCESSING.md)）

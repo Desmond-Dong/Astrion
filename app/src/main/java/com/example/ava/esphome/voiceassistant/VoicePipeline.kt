@@ -25,13 +25,16 @@ class VoicePipeline(
     private val sendMessage: suspend (MessageLite) -> Unit,
     private val listeningChanged: (listening: Boolean) -> Unit,
     private val stateChanged: (state: EspHomeState) -> Unit,
-    private val ended: suspend (continueConversation: Boolean) -> Unit
+    private val ended: suspend (continueConversation: Boolean) -> Unit,
+    private val vadConfig: suspend () -> VadConfig = { VadConfig.DISABLED }
 ) {
     private var continueConversation = false
     private val micAudioBuffer = ArrayDeque<ByteString>()
     private var isRunning = false
     private var ttsStreamUrl: String? = null
     private var ttsPlayed = false
+    private var silenceDetector: SilenceDetector? = null
+    private var audioEndSent = false
 
     private var _state: EspHomeState = Listening
     val state get() = _state
@@ -41,6 +44,16 @@ class VoicePipeline(
      * Calls the stateChanged and listeningChanged callbacks with the initial state.
      */
     suspend fun start(wakeWordPhrase: String = "") {
+        // Device-side end-of-speech: create the silence detector for this run
+        // unless the local VAD is disabled (threshold 0).
+        silenceDetector = vadConfig().takeIf { it.enabled }?.let { config ->
+            SilenceDetector(
+                silenceThreshold = config.silenceThreshold,
+                silenceDurationMs = config.silenceDurationMs,
+                minSpeechDurationMs = config.minSpeechDurationMs
+            )
+        }
+        audioEndSent = false
         stateChanged(state)
         listeningChanged(state == Listening)
         sendMessage(voiceAssistantRequest {
@@ -61,6 +74,8 @@ class VoicePipeline(
         ttsPlayed = false
         continueConversation = false
         micAudioBuffer.clear()
+        silenceDetector = null
+        audioEndSent = false
         updateState(Connected)
     }
 
@@ -74,6 +89,9 @@ class VoicePipeline(
                 isRunning = true
                 continueConversation = false
                 ttsPlayed = false
+                // A restarted run starts with a clean end-of-speech state
+                silenceDetector?.reset()
+                audioEndSent = false
                 // Prepare TTS playback
                 ttsStreamUrl = voiceEvent.dataList.firstOrNull { data -> data.name == "url" }?.value
                 // Init the player early so it gains system audio focus, this ducks any
@@ -173,6 +191,11 @@ class VoicePipeline(
      * If the pipeline is not in the Listening state, drops the microphone audio.
      * Else either buffers the audio internally if the pipeline is not yet ready,
      * or sends any buffered audio and the new audio.
+     *
+     * While streaming, the audio is also fed through the device-side silence
+     * detector (if enabled): when it fires, the pipeline stops listening and
+     * sends an empty `VoiceAssistantAudio(end = true)` frame so Home Assistant
+     * finalizes the STT without relying on its own server-side VAD.
      */
     suspend fun processMicAudio(audio: ByteString) {
         if (_state != Listening)
@@ -185,6 +208,21 @@ class VoicePipeline(
                 sendMessage(voiceAssistantAudio { data = micAudioBuffer.removeFirst() })
             }
             sendMessage(voiceAssistantAudio { data = audio })
+            detectEndOfSpeech(audio)
+        }
+    }
+
+    private suspend fun detectEndOfSpeech(audio: ByteString) {
+        if (audioEndSent)
+            return
+        val detector = silenceDetector ?: return
+        if (detector.processAudio(audio.toByteArray())) {
+            Timber.i("End of speech detected locally, finishing the audio stream")
+            audioEndSent = true
+            // Leave the Listening state (stops the mic streaming) and tell HA
+            // the audio is complete; STT then runs on what was already sent.
+            updateState(Processing)
+            sendMessage(voiceAssistantAudio { end = true })
         }
     }
 }
