@@ -68,14 +68,14 @@ class IrCodecTest {
         val payload = byteArrayOf(
             38,                 // type
             2,                  // repeat -> repeat+1 = 3
-            8, 0,               // LE length
-            0x00, 0x90.toByte(), 0x01,   // extended value 0x0190 = 400
+            9, 0,               // LE length = 9 (3 pulses + 2 extended bytes + 2 end marker)
+            0x00, 0x90, 0x01,   // extended value 0x0190 = 400
             10,                 // single byte
-            0x00, 0x07,         // extended value 7
+            0x00, 0x07, 0x00,   // extended value 7 (LE 0x0007)
             0x0D, 0x05,         // end marker
         )
         val dataLength = (payload[2].toInt() and 0xFF) or ((payload[3].toInt() and 0xFF) shl 8)
-        assertEquals(8, dataLength)
+        assertEquals(9, dataLength)
         val code = Base64.getEncoder().encodeToString(payload)
 
         val decoded = assertNotNull(IrCodec.decode(code))
