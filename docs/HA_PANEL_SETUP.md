@@ -187,7 +187,29 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 - 每个"设备"同时暴露一个 `infrared` 实体，HA 可直接 `infrared.transmit`
   原始时序（不打码库）。
 
-## 6. 物理按键绑定 `astrion_key_bindings`
+## 6. 物理按键绑定 `astrion_key_bindings`（推荐：一行一键，无需 JSON）
+
+**最简单写法**——一行一个按键，等号后直接填实体 id（场景/脚本/开关/灯都行，
+动作按域自动推断），或带前缀的特殊动作：
+
+```
+# 注释
+132=home                    # 回到首页
+135=light.ceiling           # 开/关这盏灯（按当前状态）
+136=scene.film              # 执行场景
+137=script.goodnight        # 运行脚本
+132_long=climate.ac         # 长按：开/关空调
+93=room:客厅                # 跳到房间
+94=card:tv1                 # 打开设备详情页
+96=voice                    # 免唤醒语音对话
+```
+
+- `键码_long=` 表示长按（800ms），不带后缀为短按
+- 实体 id 动作按域自动推断：`scene`/`script` → 执行；`button` → 按压；
+  `switch`/`light`/`fan` 等 → 按当前状态开/关切换
+- 也可用完整 JSON 形态（高级，可选）：
+
+
 
 原快捷键体系（短按/长按 → 房间/设备页/服务），现在完全由 HA 下发：
 

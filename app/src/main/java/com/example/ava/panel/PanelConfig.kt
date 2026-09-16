@@ -102,7 +102,7 @@ data class PanelLayout(
                         }
                         room.cards += cards
                     } else {
-                        rooms.add(PanelRoom(roomPart, cards))
+                        rooms.add(PanelRoom(roomPart, cards.toMutableList()))
                     }
                 }
                 PanelLayout(
@@ -216,6 +216,64 @@ data class PanelKeyBindings(
         fun fromJson(json: String): PanelKeyBindings? = runCatching {
             if (json.isBlank()) null else panelJson.decodeFromString<PanelKeyBindings>(json)
         }.getOrNull()
+
+        /**
+         * Accepts the JSON form or a plain one-line-per-key form that needs no
+         * JSON. `keycode` optionally suffixed `_long` maps to a target:
+         *
+         * ```
+         * # 注释
+         * 132=home                    # 回到首页
+         * 135=light.ceiling           # 实体 id：按域自动动作（开/关/执行场景）
+         * 136=scene.film
+         * 132_long=climate.ac
+         * 93=room:客厅                # 跳到房间
+         * 94=card:tv1                 # 打开设备详情页
+         * 96=voice                    # 免唤醒语音对话
+         * ```
+         *
+         * Plain entity ids get domain-based default actions: scene/script
+         * turn on, other on/off domains toggle. `#` lines are comments.
+         */
+        fun parseFlexible(text: String): PanelKeyBindings? {
+            if (text.isBlank()) return null
+            if (text.trimStart().startsWith("{")) return fromJson(text)
+            return runCatching {
+                val bindings = mutableListOf<KeyBinding>()
+                for (rawLine in text.lines()) {
+                    val line = rawLine.trim()
+                    if (line.isEmpty() || line.startsWith("#") || !line.contains('=')) continue
+                    val keyPart = line.substringBefore('=').trim().lowercase()
+                    val target = line.substringAfter('=').trim()
+                    if (target.isBlank()) continue
+                    val longPress = keyPart.endsWith("_long")
+                    val keycode = keyPart.removeSuffix("_long").toIntOrNull() ?: continue
+                    bindings.add(
+                        when {
+                            target == "voice" -> KeyBinding(keycode, longPress, KeyBindingActions.VOICE)
+                            target == "home" -> KeyBinding(keycode, longPress, KeyBindingActions.HOME)
+                            target.startsWith("room:") -> KeyBinding(
+                                keycode, longPress, KeyBindingActions.ROOM,
+                                target.removePrefix("room:").trim()
+                            )
+
+                            target.startsWith("card:") -> KeyBinding(
+                                keycode, longPress, KeyBindingActions.CARD,
+                                target.removePrefix("card:").trim()
+                            )
+
+                            target.contains('.') -> KeyBinding(
+                                keycode, longPress, KeyBindingActions.SERVICE,
+                                entityId = target
+                            )
+
+                            else -> continue
+                        }
+                    )
+                }
+                PanelKeyBindings(bindings)
+            }.getOrNull()
+        }
     }
 }
 
@@ -230,7 +288,13 @@ object KeyBindingActions {
     /** Call the HA service [KeyBinding.service] with [KeyBinding.entityId]/[KeyBinding.data]. */
     const val SERVICE = "service"
 
-    val all = setOf(ROOM, CARD, SERVICE)
+    /** Jump back to the first room (panel home). */
+    const val HOME = "home"
+
+    /** Start a hands-free Assist conversation (same as the mic key). */
+    const val VOICE = "voice"
+
+    val all = setOf(ROOM, CARD, SERVICE, HOME, VOICE)
 }
 
 @Serializable

@@ -85,7 +85,7 @@ class PanelConfigStore @Inject constructor(
                                     name = deviceName,
                                     entities = buttons.keys.map { PanelEntityRef(key = it) }
                                 )
-                            }
+                            }.toMutableList()
                         )
                     ),
                     pages = layout.pages,
@@ -97,7 +97,7 @@ class PanelConfigStore @Inject constructor(
         }
 
     val keyBindings: Flow<PanelKeyBindings> =
-        raw.map { PanelKeyBindings.fromJson(it.keyBindingsJson) ?: PanelKeyBindings() }
+        raw.map { PanelKeyBindings.parseFlexible(it.keyBindingsJson) ?: PanelKeyBindings() }
 
     /**
      * Home Assistant entity ids the panel subscribes to, parsed from the
@@ -133,7 +133,7 @@ class PanelConfigStore @Inject constructor(
      */
     suspend fun applyKeyBindingsJson(json: String): Boolean =
         apply("key_bindings", json) { current ->
-            if (PanelKeyBindings.fromJson(json) == null) null
+            if (PanelKeyBindings.parseFlexible(json) == null) null
             else current.copy(keyBindingsJson = json.trim())
         }
 

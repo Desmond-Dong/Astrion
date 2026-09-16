@@ -193,6 +193,49 @@ class PanelConfigJsonTest {
     }
 
     @Test
+    fun `plain text key bindings parse with entity ids and prefixes`() {
+        val text = """
+            # 注释
+            132=home
+            135=light.ceiling
+            136=scene.film
+            137=script.goodnight
+            132_long=climate.ac
+            93=room:客厅
+            94=card:tv1
+            96=voice
+        """.trimIndent()
+
+        val bindings = PanelKeyBindings.parseFlexible(text)
+
+        assertNotNull(bindings)
+        assertEquals(8, bindings.bindings.size)
+
+        val home = bindings.bindings[0]
+        assertEquals(132, home.keycode)
+        assertFalse(home.longPress)
+        assertEquals(KeyBindingActions.HOME, home.action)
+
+        // plain entity ids become service actions with the entity id target
+        val light = bindings.bindings[1]
+        assertEquals(KeyBindingActions.SERVICE, light.action)
+        assertEquals("light.ceiling", light.entityId)
+
+        assertEquals("scene.film", bindings.bindings[2].entityId)
+        assertEquals("script.goodnight", bindings.bindings[3].entityId)
+
+        val longClimate = bindings.bindings[4]
+        assertTrue(longClimate.longPress)
+        assertEquals("climate.ac", longClimate.entityId)
+
+        assertEquals(KeyBindingActions.ROOM, bindings.bindings[5].action)
+        assertEquals("客厅", bindings.bindings[5].target)
+        assertEquals(KeyBindingActions.CARD, bindings.bindings[6].action)
+        assertEquals("tv1", bindings.bindings[6].target)
+        assertEquals(KeyBindingActions.VOICE, bindings.bindings[7].action)
+    }
+
+    @Test
     fun `empty keycodes and blank names get safe object ids`() {
         assertEquals("ir_device", irObjectId("###"))
         assertEquals("mi_tv_2", irObjectId("Mi TV 2"))

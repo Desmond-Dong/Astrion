@@ -92,6 +92,8 @@ class KeyBindingExecutor @Inject constructor(
     private val activityNavigator: ActivityNavigator,
     private val haActionBus: HaActionBus,
     private val panelUiEvents: PanelUiEvents,
+    private val satelliteStateHolder: SatelliteStateHolder,
+    private val haStatesStore: com.example.ava.services.HomeAssistantStatesStore,
 ) {
     /** @return true when a binding matched and was executed. */
     suspend fun handle(press: KeyPress): Boolean {
@@ -102,14 +104,36 @@ class KeyBindingExecutor @Inject constructor(
         Timber.d("Key binding fired: keyCode=${press.keyCode} long=${press.longPress} action=${binding.action}")
         when (binding.action) {
             KeyBindingActions.ROOM -> activityNavigator.setPage(binding.target)
+            KeyBindingActions.HOME -> {
+                val firstRoom = panelConfigStore.effectiveLayout.first().rooms
+                    .firstOrNull()?.title.orEmpty()
+                activityNavigator.setPage(firstRoom)
+            }
+
+            KeyBindingActions.VOICE -> satelliteStateHolder.voiceAssistant?.wakeAssistant()
             KeyBindingActions.CARD -> panelUiEvents.tryOpenCard(binding.target)
-            KeyBindingActions.SERVICE -> haActionBus.callService(
-                binding.service,
-                buildMap {
-                    if (binding.entityId.isNotBlank()) put("entity_id", binding.entityId)
-                    putAll(binding.data)
+            KeyBindingActions.SERVICE ->
+                if (binding.service.isNotBlank()) {
+                    haActionBus.callService(
+                        binding.service,
+                        buildMap {
+                            if (binding.entityId.isNotBlank()) put("entity_id", binding.entityId)
+                            putAll(binding.data)
+                        }
+                    )
+                } else {
+                    // Plain entity id: default action by domain (§4.1 服务分派)
+                    val domain = binding.entityId.substringBefore('.')
+                    val service = when (domain) {
+                        "scene", "script" -> "${domain}.turn_on"
+                        "button", "input_button" -> "${domain}.press"
+                        else -> defaultToggleService(binding.entityId, domain)
+                    }
+                    haActionBus.callService(
+                        service,
+                        mapOf("entity_id" to binding.entityId)
+                    )
                 }
-            )
 
             else -> {
                 Timber.w("Unknown key binding action: ${binding.action}")
@@ -117,6 +141,13 @@ class KeyBindingExecutor @Inject constructor(
             }
         }
         return true
+    }
+
+    /** Toggles on/off domains based on the imported HA state. */
+    private suspend fun defaultToggleService(entityId: String, domain: String): String {
+        val state = haStatesStore.states.value[entityId]?.state
+        val turnOff = state == "on"
+        return "${domain}.${if (turnOff) "turn_off" else "turn_on"}"
     }
 }
 
