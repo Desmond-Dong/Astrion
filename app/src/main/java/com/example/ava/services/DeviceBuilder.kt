@@ -291,15 +291,27 @@ class DeviceBuilder @Inject constructor(
             key = keyAllocator.next(),
             name = "Button Pressed",
             objectId = "panel_button_pressed",
-            eventTypes = listOf("button_pressed"),
-            events = eventHub.buttonPressed.map { "button_pressed" }
+            eventTypes = listOf("button_pressed", "key_pressed", "key_long_pressed"),
+            events = kotlinx.coroutines.flow.merge(
+                eventHub.buttonPressed.map { "button_pressed" },
+                eventHub.keyEvents.map {
+                    if (it.longPress) "key_long_pressed" else "key_pressed"
+                }
+            )
+        )
+        // The last physical key pressed, e.g. `135` / `135_long`
+        entities += TextSensorEntity(
+            key = keyAllocator.next(),
+            name = "Panel Last Key",
+            objectId = "panel_last_key",
+            getState = eventHub.lastKey
         )
         // The panel's page list, mirrored to HA (原 navigate_list_upload)
         entities += TextSensorEntity(
             key = keyAllocator.next(),
             name = "Panel Pages",
             objectId = "panel_pages",
-            getState = panelConfigStore.layout.map { layout ->
+            getState = panelConfigStore.effectiveLayout.map { layout ->
                 (layout.rooms.map { it.title } + layout.pages)
                     .filter { it.isNotBlank() }
                     .distinct()

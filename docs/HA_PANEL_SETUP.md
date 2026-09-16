@@ -42,7 +42,8 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `<设备名>`（每个码库设备） | infrared | 直发原始时序（ESPHome infrared 服务） |
 | `<按键> (<设备名>)`（每个码库按键） | button | 单键红外发射 |
 | `panel_page_visited` | event | 用户在面板上跳页时触发 `page_visited`（原 `astrion/page_visited`，HA 发起的跳页不触发） |
-| `panel_button_pressed` | event | 用户在面板上按遥控键时触发 `button_pressed`（原 `astrion/control_command`） |
+| `panel_button_pressed` | event | `button_pressed`（屏幕上的遥控键）/ `key_pressed` / `key_long_pressed`（**任意物理按键**，短按/长按，原 `astrion/control_command`） |
+| `panel_last_key` | text_sensor | 最后按下的物理键键码，如 `135` / `135_long`，配合按键事件实现任意键绑定 |
 | `panel_pages` | text_sensor | 面板当前页面清单，逗号分隔（原 `astrion/navigate_list_upload`） |
 | `screen_saver_timeout` | number | 屏保空闲超时（秒，0–600，步进 5，默认 0=关闭）；无按键/触摸达到该时长后面板显示全屏时钟/日期/电量/HA 连接状态，任意按键或触摸即退出 |
 | `raise_to_wake_threshold` | number ☰ | 抬手唤醒加速度阈值（m/s²，0–10，步进 0.1，默认 0=关闭）；面板熄屏时被拿起（加速度突变超阈值）即自动亮屏，判定间隔 3 秒防抖 |

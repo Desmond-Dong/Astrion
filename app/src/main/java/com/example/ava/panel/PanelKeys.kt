@@ -47,7 +47,8 @@ class PhysicalKeyBus @Inject constructor() {
 @Singleton
 class KeyRouter @Inject constructor(
     private val satelliteStateHolder: SatelliteStateHolder,
-    private val keyBindingExecutor: KeyBindingExecutor
+    private val keyBindingExecutor: KeyBindingExecutor,
+    private val eventHub: PanelEventHub
 ) {
     private var handler: (suspend (KeyPress) -> Boolean)? = null
 
@@ -58,6 +59,9 @@ class KeyRouter @Inject constructor(
     /** @return true when the key was consumed. */
     suspend fun dispatch(press: KeyPress): Boolean {
         if (press.cancel) return true
+        // Every physical key is reported to Home Assistant so automations can
+        // see (and bind) any key, even when the panel itself ignores it.
+        eventHub.announceKeyPressed(press.keyCode, press.longPress)
         // Physical mic/voice key: start an Assist pipeline without a wake
         // word, on every screen, like the original voice dialog.
         if (press.keyCode == KEY_VOICE_X9_HA10 || press.keyCode == KEY_VOICE_HA100) {
