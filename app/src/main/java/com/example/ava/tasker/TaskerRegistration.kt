@@ -14,8 +14,8 @@ suspend fun EspHomeDevice.observeTaskerState(context: Context) = combine(
     voiceAssistant.state,
     voiceAssistant.allTimers
 ) { state, timers ->
-    AvaActivityRunner.updateState(state, timers)
-    ActivityConfigAvaActivity::class.java.requestQuery(context)
+    AstrionActivityRunner.updateState(state, timers)
+    ActivityConfigAstrionActivity::class.java.requestQuery(context)
 }.onStart {
     registerTaskerActions()
 }.onCompletion {
