@@ -111,7 +111,13 @@ class PanelConfigStore @Inject constructor(
         // automatically for every plain light entity in the list.
         l.syncEntities.forEach { entry ->
             val tail = entry.substringAfter('.', "")
-            if (entry.startsWith("light.") && tail.isNotBlank() && !tail.contains('.')) {
+            val isPlainEntity = tail.isNotBlank() && !tail.contains('.')
+            if (isPlainEntity) {
+                // The friendly HA display name and light capability attributes
+                // (调色温/颜色/亮度联动) are subscribed automatically.
+                expanded += "$entry.friendly_name"
+            }
+            if (entry.startsWith("light.") && isPlainEntity) {
                 expanded += listOf(
                     "$entry.supported_color_modes",
                     "$entry.color_temp_kelvin",

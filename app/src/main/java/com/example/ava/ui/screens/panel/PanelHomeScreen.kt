@@ -101,13 +101,16 @@ fun cardIconRes(type: String): Int = when (type) {
     else -> R.drawable.ic_panel_switch
 }
 
-/** Human readable card name: alias/name falls back to the entity id. */
-fun PanelCard.displayName(): String =
-    name.ifBlank {
-        primaryEntity?.alias?.ifBlank { null }
-            ?: primaryEntity?.entityId?.substringAfter('.')?.replace('_', ' ')
-            ?: "设备"
+/** Human readable card name: explicit name, then the HA friendly name, then the entity id. */
+fun PanelCard.displayName(states: Map<String, com.example.ava.services.HaEntityState> = emptyMap()): String {
+    name.ifBlank { primaryEntity?.alias?.ifBlank { null } }?.let { return it }
+    val entityId = primaryEntity?.entityId
+    if (entityId != null) {
+        states["$entityId.friendly_name"]?.state?.takeIf { it.isNotBlank() }?.let { return it }
     }
+    return entityId?.substringAfter('.')?.replace('_', ' ')?.replaceFirstChar { it.uppercase() }
+        ?: "设备"
+}
 
 /** One-line state summary for a card, from the imported HA entity states. */
 fun cardStateText(card: PanelCard, states: Map<String, com.example.ava.services.HaEntityState>): String {
@@ -310,6 +313,7 @@ private fun RoomCardsGrid(
         items(cards, key = { it.cardId }) { card ->
             DeviceCard(
                 card = card,
+                name = card.displayName(haStates),
                 stateText = cardStateText(card, haStates),
                 onClick = { onOpenCard(card) }
             )
@@ -320,6 +324,7 @@ private fun RoomCardsGrid(
 @Composable
 private fun DeviceCard(
     card: PanelCard,
+    name: String,
     stateText: String,
     onClick: () -> Unit,
 ) {
@@ -350,7 +355,7 @@ private fun DeviceCard(
             }
             Column {
                 Text(
-                    text = card.displayName(),
+                    text = name,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = RemoteColors.onSurface,

@@ -150,7 +150,7 @@ fun DeviceDetailScreen(
 
     val current = card
     DetailScaffold(
-        title = current?.displayName() ?: "",
+        title = current?.displayName(haStates) ?: "",
         onBack = { navController.popBackStack() }
     ) {
         when (current?.resolvedType) {
