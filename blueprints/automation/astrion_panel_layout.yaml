@@ -120,15 +120,13 @@ blueprint:
           filter:
             - domain: vacuum
           multiple: true
-    layout_part_entities:
-      name: 面板布局分片实体（Panel Layout 00–03）
-      description: 面板设备上的 Panel Layout 00 到 Panel Layout 03，按 00→03 顺序全部勾选
-      default: []
+    layout_entity:
+      name: 面板布局实体
+      description: 面板设备上的 Panel Layout（text.astrion_layout）
       selector:
         entity:
           filter:
             - domain: text
-          multiple: true
 
 triggers:
   - trigger: homeassistant
@@ -139,7 +137,7 @@ triggers:
     event_type: entity_registry_updated
 
 variables:
-  layout_part_entities: !input layout_part_entities
+  layout_entity: !input layout_entity
 
 actions:
   # 勾选的设备清单与布局 JSON 必须在动作序列里逐步求值：
@@ -181,18 +179,32 @@ actions:
           {% set ns.rows = ns.rows + [a ~ '=' ~ (ns.by_area[a] | join(', '))] %}
         {% endfor %}
         {{ ns.rows | join('; ') }}
-  - if: "{{ all_entities | count > 0 and layout_part_entities | count == 4 }}"
+  - if: "{{ all_entities | count > 0 }}"
     then:
-      - repeat:
-          for_each: "{{ layout_part_entities }}"
-          sequence:
-            - variables:
-                part_index: "{{ repeat.index - 1 }}"
-                part_value: "{{ layout_text[(part_index * 250):(part_index * 250 + 250)] }}"
-            - action: text.set_value
-              target:
-                entity_id: "{{ repeat.item }}"
-              data:
-                value: "{{ part_value }}"
+      # 单条即可容纳（约 8-10 台设备）；超出部分自动写入 3 个隐藏溢出分片
+      # （默认停用，需要时在设备页启用它们即可，写入失败不会中断）
+      - action: text.set_value
+        target:
+          entity_id: "{{ layout_entity }}"
+        data:
+          value: "{{ layout_text[:250] }}"
+      - action: text.set_value
+        continue_on_error: true
+        target:
+          entity_id: text.astrion_layout_part_00
+        data:
+          value: "{{ layout_text[250:500] }}"
+      - action: text.set_value
+        continue_on_error: true
+        target:
+          entity_id: text.astrion_layout_part_01
+        data:
+          value: "{{ layout_text[500:750] }}"
+      - action: text.set_value
+        continue_on_error: true
+        target:
+          entity_id: text.astrion_layout_part_02
+        data:
+          value: "{{ layout_text[750:1000] }}"
 
 mode: single
