@@ -190,7 +190,13 @@ class PanelConfigStore @Inject constructor(
             return false
         }
         if (updated != current) {
-            settings.update { updated }
+            // 容错: a failed persist keeps the previous configuration instead
+            // of crashing the panel.
+            runCatching { settings.update { updated } }
+                .onFailure {
+                    Timber.e(it, "Failed to persist $tag config; keeping previous")
+                    return false
+                }
             Timber.i("Panel $tag config updated (${json.length} chars), bumping version")
             _version.value += 1
         }

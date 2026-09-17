@@ -335,6 +335,8 @@ private fun RoomCardsGrid(
     haStates: Map<String, com.example.ava.services.HaEntityState>,
     onOpenCard: (PanelCard) -> Unit,
 ) {
+    // 容错: duplicate keys would crash the grid - keep the first of any dupes
+    val uniqueCards = remember(cards) { cards.distinctBy { it.cardId } }
     if (cards.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
@@ -353,7 +355,7 @@ private fun RoomCardsGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        items(cards, key = { it.cardId }) { card ->
+        items(uniqueCards, key = { it.cardId }) { card ->
             DeviceCard(
                 card = card,
                 name = card.displayName(haStates),
