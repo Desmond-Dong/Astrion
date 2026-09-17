@@ -124,9 +124,12 @@ class VoiceInputImpl(
                 }
             }.onStart {
                 // 音频采集线程拉到最高优先级，降低唤醒检测与推流延迟
-                android.os.Process.setThreadPriority(
-                    android.os.Process.THREAD_PRIORITY_URGENT_AUDIO
-                )
+                // （JVM 单测里 android.os.Process 是 stub，失败可安全忽略）
+                runCatching {
+                    android.os.Process.setThreadPriority(
+                        android.os.Process.THREAD_PRIORITY_URGENT_AUDIO
+                    )
+                }
                 microphone.start()
                 wakeWord.setWakeWords(wakeWords.values.toList() + stopWords.values.toList())
             }.onCompletion {
