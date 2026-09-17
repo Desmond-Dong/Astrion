@@ -97,12 +97,20 @@ class PanelViewModel @Inject constructor(
     val raiseToWake = displaySettingsStore.raiseToWakeThreshold
         .map { it > 0f }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val screenSaverTimeout = displaySettingsStore.screenSaverTimeout
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     fun selectRoom(title: String) = activityNavigator.setPage(title)
 
     fun setRaiseToWake(enabled: Boolean) {
         viewModelScope.launch {
             displaySettingsStore.raiseToWakeThreshold.set(if (enabled) 4f else 0f)
+        }
+    }
+
+    fun setScreenSaverTimeout(seconds: Int) {
+        viewModelScope.launch {
+            displaySettingsStore.screenSaverTimeout.set(seconds.coerceIn(0, 600))
         }
     }
 
@@ -210,6 +218,7 @@ fun PanelHomeScreen(
     val deviceState by viewModel.deviceState.collectAsStateWithLifecycle()
     val micMuted by viewModel.micMuted.collectAsStateWithLifecycle(initialValue = false)
     val raiseToWake by viewModel.raiseToWake.collectAsStateWithLifecycle()
+    val screenSaverTimeout by viewModel.screenSaverTimeout.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val rooms = remember(layout) { layout.rooms }
@@ -287,6 +296,8 @@ fun PanelHomeScreen(
                 onMicMutedChanged = { viewModel.setMicMuted(it) },
                 raiseToWake = raiseToWake,
                 onRaiseToWakeChanged = { viewModel.setRaiseToWake(it) },
+                screenSaverTimeout = screenSaverTimeout,
+                onScreenSaverTimeoutChanged = { viewModel.setScreenSaverTimeout(it) },
                 onRefreshDevices = { viewModel.refreshDevices() },
                 onOpenShortcutKeys = { navController.navigate(ShortcutKeysRoute) },
                 onOpenSettings = {

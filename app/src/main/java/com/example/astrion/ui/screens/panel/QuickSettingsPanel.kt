@@ -3,6 +3,7 @@ package com.example.astrion.ui.screens.panel
 import android.content.Context
 import android.media.AudioManager
 import android.provider.Settings
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
@@ -55,6 +56,8 @@ fun QuickSettingsPanel(
     onMicMutedChanged: (Boolean) -> Unit,
     raiseToWake: Boolean,
     onRaiseToWakeChanged: (Boolean) -> Unit,
+    screenSaverTimeout: Int,
+    onScreenSaverTimeoutChanged: (Int) -> Unit,
     onRefreshDevices: () -> Unit,
     onOpenShortcutKeys: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -169,6 +172,21 @@ fun QuickSettingsPanel(
                 Spacer(Modifier.weight(1f))
                 Switch(checked = raiseToWake, onCheckedChange = onRaiseToWakeChanged)
             }
+            Spacer(Modifier.height(6.dp))
+
+            // 屏保时长：0=关闭，30 秒步进到 10 分钟（与 HA number 实体双向同步）
+            val saverLabel = when {
+                screenSaverTimeout <= 0 -> "关闭"
+                screenSaverTimeout < 60 -> "${screenSaverTimeout}秒"
+                else -> "${(screenSaverTimeout + 30) / 60}分钟"
+            }
+            Text("屏保 $saverLabel", color = RemoteColors.onSurface, fontSize = 14.sp)
+            Slider(
+                value = screenSaverTimeout.toFloat(),
+                onValueChange = { onScreenSaverTimeoutChanged((it / 30f).roundToInt() * 30) },
+                valueRange = 0f..600f,
+                steps = 19
+            )
             Spacer(Modifier.height(6.dp))
 
             // 快捷键绑定（原版 rlShortcutKey → ShortcutKeyActivity）

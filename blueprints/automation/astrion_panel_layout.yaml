@@ -1,0 +1,52 @@
+blueprint:
+  name: Astrion 面板自动布局
+  description: >-
+    自动把家里所有可控设备按房间（HA 的"区域"）分组，推送到面板。
+    导入后创建自动化、选择面板的 Panel Layout 实体即可，无需手写任何内容：
+    HA 重启后 / 每天凌晨 4 点 / 家里设备变动时，面板布局自动跟着更新。
+  domain: automation
+  author: Astrion
+  input:
+    layout_entity:
+      name: 面板布局实体
+      description: 面板设备上的 Panel Layout（text.astrion_layout）
+      selector:
+        entity:
+          filter:
+            - domain: text
+    exclude_entities:
+      name: 不想出现在面板上的设备（可选）
+      default: []
+      selector:
+        entity:
+          multiple: true
+
+triggers:
+  - trigger: homeassistant
+    event: start
+  - trigger: time
+    at: "04:00:00"
+  - trigger: event
+    event_type: entity_registry_updated
+
+actions:
+  - action: text.set_value
+    target:
+      entity_id: !input layout_entity
+    data:
+      value: >-
+        {% set keep = 'light|switch|fan|climate|cover|media_player|remote|scene|script|humidifier|water_heater|valve|vacuum|lawn_mower' %}
+        {% set exclude = exclude_entities %}
+        {% set ns = namespace(rows: []) %}
+        {% for area in areas() %}
+          {% set es = area_entities(area)
+             | select('match', '^(' ~ keep ~ ')\\.')
+             | reject('in', exclude)
+             | list %}
+          {% if es | count > 0 %}
+            {% set ns.rows = ns.rows + [area_name(area) ~ '=' ~ (es | join(','))] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.rows | join(';') }}
+
+mode: single
