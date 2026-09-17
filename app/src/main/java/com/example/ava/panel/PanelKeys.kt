@@ -48,7 +48,8 @@ class PhysicalKeyBus @Inject constructor() {
 class KeyRouter @Inject constructor(
     private val satelliteStateHolder: SatelliteStateHolder,
     private val keyBindingExecutor: KeyBindingExecutor,
-    private val eventHub: PanelEventHub
+    private val eventHub: PanelEventHub,
+    private val panelUiEvents: PanelUiEvents
 ) {
     private var handler: (suspend (KeyPress) -> Boolean)? = null
 
@@ -70,9 +71,27 @@ class KeyRouter @Inject constructor(
             }
             return true
         }
+        // 返回键：离开设备详情页回到上一级；首页键：回到应用首页
+        if (press.keyCode == KEY_BACK) {
+            if (handler != null) panelUiEvents.requestBack()
+            return true
+        }
+        if (press.keyCode == KEY_HOME_PANEL) {
+            panelUiEvents.requestGoHome()
+            return true
+        }
         if (handler?.invoke(press) == true) return true
         return keyBindingExecutor.handle(press)
     }
+
+    private companion object {
+        /** Voice assistant keys per device model (§3.10.1). */
+        const val KEY_VOICE_X9_HA10 = 131
+        const val KEY_VOICE_HA100 = 133
+        const val KEY_BACK = 4
+        const val KEY_HOME_PANEL = 164
+    }
+}
 
     private companion object {
         /** Voice assistant keys per device model (§3.10.1). */
@@ -164,7 +183,31 @@ class PanelUiEvents @Inject constructor() {
     )
     val openCard: SharedFlow<String> = _openCard.asSharedFlow()
 
+    private val _navigateBack = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val navigateBack: SharedFlow<Unit> = _navigateBack.asSharedFlow()
+
+    private val _goHome = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val goHome: SharedFlow<Unit> = _goHome.asSharedFlow()
+
     fun tryOpenCard(cardId: String) {
         _openCard.tryEmit(cardId)
+    }
+
+    /** Physical BACK: leave the device detail page. */
+    fun requestBack() {
+        _navigateBack.tryEmit(Unit)
+    }
+
+    /** Physical HOME key: pop everything back to the panel home. */
+    fun requestGoHome() {
+        _goHome.tryEmit(Unit)
     }
 }

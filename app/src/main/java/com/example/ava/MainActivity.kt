@@ -70,7 +70,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             AstrionPanelTheme {
                 OnCreate()
-                PanelNavHost(openCard = panelUiEvents.openCard)
+                PanelNavHost(
+                    openCard = panelUiEvents.openCard,
+                    navigateBack = panelUiEvents.navigateBack,
+                    goHome = panelUiEvents.goHome
+                )
                 val deviceState by satelliteStateHolder.deviceState.collectAsState()
                 ScreensaverHost(
                     controller = screensaverController,

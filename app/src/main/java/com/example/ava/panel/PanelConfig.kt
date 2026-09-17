@@ -80,8 +80,7 @@ data class PanelLayout(
                 val pages = mutableListOf<String>()
                 // HA text entities are single-line inputs, so ';' splits
                 // records just like a newline would.
-                for (rawLine in text.split('
-', ';')) {
+                for (rawLine in text.split('\n', ';')) {
                     val line = rawLine.trim()
                     if (line.isEmpty() || line.startsWith("#")) continue
                     val (roomPart, entityPart, cardName) = splitLine(line)

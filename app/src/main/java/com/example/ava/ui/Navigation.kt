@@ -19,13 +19,26 @@ object Home
 data class DeviceDetail(val cardId: String)
 
 @Composable
-fun PanelNavHost(openCard: SharedFlow<String>) {
+fun PanelNavHost(
+    openCard: SharedFlow<String>,
+    navigateBack: SharedFlow<Unit>,
+    goHome: SharedFlow<Unit>,
+) {
     val navController = rememberNavController()
 
-    // Key bindings can open card pages from anywhere (§3.10.5 快捷键).
+    // Key bindings can open card pages from anywhere (§3.10.5 快捷键);
+    // the physical BACK/HOME keys navigate the app itself.
     LaunchedEffect(navController) {
         openCard.collect { cardId ->
             navController.navigate(DeviceDetail(cardId))
+        }
+    }
+    LaunchedEffect(navController) {
+        navigateBack.collect { navController.popBackStack() }
+    }
+    LaunchedEffect(navController) {
+        goHome.collect {
+            navController.popBackStack(Home, inclusive = false)
         }
     }
 
