@@ -111,7 +111,7 @@ class VoiceSatelliteService() : LifecycleService() {
                     2,
                     createVoiceSatelliteServiceNotification(
                         this@VoiceSatelliteService,
-                        (_voiceSatellite.value?.voiceAssistant?.state ?: Stopped).translate(resources)
+                        (_voiceSatellite.value?.voiceAssistant?.state?.value ?: Stopped).translate(resources)
                     )
                 )
             }
@@ -139,7 +139,7 @@ class VoiceSatelliteService() : LifecycleService() {
             2,
             createVoiceSatelliteServiceNotification(
                 this,
-                (_voiceSatellite.value?.voiceAssistant?.state ?: Stopped).translate(resources)
+                (_voiceSatellite.value?.voiceAssistant?.state?.value ?: Stopped).translate(resources)
             )
         )
         lifecycleScope.launch {

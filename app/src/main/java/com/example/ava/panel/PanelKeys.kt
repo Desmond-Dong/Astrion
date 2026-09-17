@@ -81,13 +81,6 @@ class KeyRouter @Inject constructor(
     }
 }
 
-    private companion object {
-        /** Voice assistant keys per device model (§3.10.1). */
-        const val KEY_VOICE_X9_HA10 = 131
-        const val KEY_VOICE_HA100 = 133
-    }
-}
-
 /**
  * Executes the HA-configured key bindings (original 快捷键 system, now pushed
  * through the `astrion_key_bindings` text entity instead of the on-device
