@@ -95,10 +95,9 @@ class KeyRouter @Inject constructor(
 }
 
 /**
- * Executes the HA-configured key bindings (original 快捷键 system, now pushed
- * through the `astrion_key_bindings` text entity instead of the on-device
- * binding UI). 解析顺序（原版 ShortcutKeyEventHandler）：
- * HA 推送绑定 → 可绑定键长按进绑定页 → 面板本地绑定（一键快速进入）→ 内置默认。
+ * Executes the on-device key bindings (original 快捷键 system). 解析顺序
+ * （原版 ShortcutKeyEventHandler）：可绑定键长按进绑定页 → 面板本地绑定
+ * （一键快速进入）→ 内置默认（F4–F11 首张匹配卡片 / 语音键 / 回首页）。
  */
 @Singleton
 class KeyBindingExecutor @Inject constructor(
@@ -113,20 +112,16 @@ class KeyBindingExecutor @Inject constructor(
     /** @return true when a binding matched and was executed. */
     suspend fun handle(press: KeyPress): Boolean {
         if (press.cancel) return false
-        // 1. HA 推送的绑定最优先（短/长按精确匹配）
-        val configured = panelConfigStore.keyBindings.first().bindings
-        configured.firstOrNull { it.keycode == press.keyCode && it.longPress == press.longPress }
-            ?.let { return execute(it) }
-        // 2. 原版 HA100：长按可绑定键（F4–F11）直接打开该键的绑定页；
+        // 1. 原版 HA100：长按可绑定键（F4–F11）直接打开该键的绑定页；
         //    设备页消费掉的键不会走到这里。
         if (press.longPress && ShortcutBindingStore.isBindableKey(press.keyCode)) {
             Timber.d("长按可绑定键 ${press.keyCode}，打开绑定页")
             panelUiEvents.tryOpenKeyBinding(press.keyCode)
             return true
         }
-        // 3. 面板本地绑定（设备上一键快速进入）
+        // 2. 面板本地绑定（设备上一键快速进入）
         shortcutBindingStore.get(press.keyCode)?.let { return executeLocal(it) }
-        // 4. 内置默认：F4–F11 打开第一张匹配卡片；仍无 → 未绑定短按进绑定页
+        // 3. 内置默认：F4–F11 打开第一张匹配卡片；仍无 → 未绑定短按进绑定页
         val defaults = defaultBindings()
         val default = defaults.firstOrNull {
             it.keycode == press.keyCode && it.longPress == press.longPress
@@ -142,7 +137,6 @@ class KeyBindingExecutor @Inject constructor(
     private suspend fun execute(binding: KeyBinding): Boolean {
         Timber.d("Key binding fired: keycode=${binding.keycode} long=${binding.longPress} action=${binding.action}")
         when (binding.action) {
-            KeyBindingActions.ROOM -> activityNavigator.setPage(binding.target)
             KeyBindingActions.HOME -> {
                 val firstRoom = panelConfigStore.effectiveLayout.first()
                     .rooms
@@ -152,49 +146,6 @@ class KeyBindingExecutor @Inject constructor(
 
             KeyBindingActions.VOICE -> satelliteStateHolder.voiceAssistant?.wakeAssistant()
             KeyBindingActions.CARD -> panelUiEvents.tryOpenCard(binding.target)
-            KeyBindingActions.SERVICE ->
-                if (binding.service.isNotBlank()) {
-                    haActionBus.callService(
-                        binding.service,
-                        buildMap {
-                            if (binding.entityId.isNotBlank()) put("entity_id", binding.entityId)
-                            putAll(binding.data)
-                        }
-                    )
-                } else {
-                    // Plain entity id: default action by domain (§4.1 服务分派).
-                    // 原版专属键语义：窗帘/空调/媒体/电视 → 打开对应设备页。
-                    val domain = binding.entityId.substringBefore('.')
-                    val pageType = when (domain) {
-                        "cover" -> PanelCardTypes.COVER
-                        "climate", "water_heater" -> PanelCardTypes.CLIMATE
-                        "media_player" -> PanelCardTypes.MEDIA_PLAYER
-                        "remote" -> PanelCardTypes.TV
-                        else -> null
-                    }
-                    if (pageType != null) {
-                        val card = panelConfigStore.effectiveLayout.first()
-                            .rooms
-                            .flatMap { it.cards }
-                            .firstOrNull {
-                                it.resolvedType == pageType &&
-                                    it.primaryEntity?.entityId == binding.entityId
-                            }
-                        if (card != null) {
-                            panelUiEvents.tryOpenCard(card.cardId)
-                            return true
-                        }
-                    }
-                    val service = when (domain) {
-                        "scene", "script" -> "${domain}.turn_on"
-                        "button", "input_button" -> "${domain}.press"
-                        else -> defaultToggleService(binding.entityId, domain)
-                    }
-                    haActionBus.callService(
-                        service,
-                        mapOf("entity_id" to binding.entityId)
-                    )
-                }
 
             else -> {
                 Timber.w("Unknown key binding action: ${binding.action}")

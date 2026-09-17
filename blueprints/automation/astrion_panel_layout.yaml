@@ -3,8 +3,8 @@ blueprint:
   description: >-
     和原版卡片设置一样：按类别勾选想出现在面板上的设备（每类可多选），
     面板自动按家里的房间（区域）分组显示，设备名沿用 HA 里的名称。
-    同时把 灯/窗帘/音乐/空调 四个专属物理键自动绑到对应设备（可改为任意一台
-    同步到面板的设备）。HA 重启后 / 每天凌晨 4 点 / 设备变动时自动刷新。
+    HA 重启后 / 每天凌晨 4 点 / 家里设备变动时，布局自动刷新。
+    物理按键绑定在遥控器上直接设置（下拉面板 → 快捷键绑定）。
   domain: automation
   author: Astrion
   input:
@@ -127,41 +127,6 @@ blueprint:
         entity:
           filter:
             - domain: text
-    light_key_device:
-      name: 灯按键绑定的设备（可选）
-      description: 默认绑到勾选的第一盏灯；也可指定同步到面板的任意一台设备
-      selector:
-        entity: {}
-    cover_key_device:
-      name: 窗帘按键绑定的设备（可选）
-      description: 默认绑到勾选的第一台窗帘；也可指定任意一台设备
-      selector:
-        entity: {}
-    media_key_device:
-      name: 音乐按键绑定的设备（可选）
-      description: 默认绑到勾选的第一台媒体播放器；也可指定任意一台设备
-      selector:
-        entity: {}
-    climate_key_device:
-      name: 空调按键绑定的设备（可选）
-      description: 默认绑到勾选的第一台空调；也可指定任意一台设备
-      selector:
-        entity: {}
-    key_bindings_entity:
-      name: 面板按键绑定实体（可选）
-      description: 面板设备上的 Key Bindings（text.astrion_key_bindings）。选择后才会下发上面的按键绑定
-      default: []
-      selector:
-        entity:
-          filter:
-            - domain: text
-    custom_key_bindings:
-      name: 自定义按键绑定（可选，优先于上面全部）
-      description: 一行式，如 `134=light.a; 135=cover.b; 96=voice`。填写后忽略上方按键设置
-      default: ""
-      selector:
-        text:
-          multiline: false
 
 triggers:
   - trigger: homeassistant
@@ -187,12 +152,6 @@ variables:
   valve_entities: !input valve_entities
   vacuum_entities: !input vacuum_entities
   layout_entity: !input layout_entity
-  key_bindings_entity: !input key_bindings_entity
-  custom_key_bindings: !input custom_key_bindings
-  light_key_device: !input light_key_device
-  cover_key_device: !input cover_key_device
-  media_key_device: !input media_key_device
-  climate_key_device: !input climate_key_device
   attribute_map:
     climate:
       - temperature
@@ -234,36 +193,6 @@ variables:
        + (remote_entities or []) + (scene_entities or []) + (script_entities or [])
        + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
        + (valve_entities or []) + (vacuum_entities or []) }}
-  key_bindings_text: >-
-    {% set ns = namespace(auto=[], manual=[]) %}
-    {% for key, domain in [[134, 'light'], [135, 'cover'], [136, 'media_player'], [137, 'climate']] %}
-      {% set es = all_entities | select('match', '^' ~ domain ~ '\\.') | list %}
-      {% if es | count > 0 %}
-        {% set ns.auto = ns.auto + [key ~ '=' ~ (es | first)] %}
-      {% endif %}
-    {% endfor %}
-    {% if light_key_device %}
-      {% set ns.manual = ns.manual + ['134=' ~ light_key_device] %}
-    {% endif %}
-    {% if cover_key_device %}
-      {% set ns.manual = ns.manual + ['135=' ~ cover_key_device] %}
-    {% endif %}
-    {% if media_key_device %}
-      {% set ns.manual = ns.manual + ['136=' ~ media_key_device] %}
-    {% endif %}
-    {% if climate_key_device %}
-      {% set ns.manual = ns.manual + ['137=' ~ climate_key_device] %}
-    {% endif %}
-    {% set ns.merged = ns.auto %}
-    {% for m in ns.manual %}
-      {% set ns.merged = ns.merged | reject('match', '^' ~ (m.split('='))[0] ~ '=') | list %}
-      {% set ns.merged = ns.merged + [m] %}
-    {% endfor %}
-    {% if custom_key_bindings and custom_key_bindings | length > 0 %}
-      {{ custom_key_bindings }}
-    {% else %}
-      {{ ns.merged | join(';') }}
-    {% endif %}
   layout_json: >-
     {% set ns = namespace(by_area={}, sync=[]) %}
     {% for e in all_entities %}
@@ -292,12 +221,5 @@ actions:
       entity_id: "{{ layout_entity }}"
     data:
       value: "{{ layout_json }}"
-  - if: "{{ key_bindings_entity and key_bindings_text | length > 0 }}"
-    then:
-      - action: text.set_value
-        target:
-          entity_id: "{{ key_bindings_entity }}"
-        data:
-          value: "{{ key_bindings_text }}"
 
 mode: single

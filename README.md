@@ -9,9 +9,9 @@
 - It is constantly using the microphone to listen for the wake word.
 
 App 本体**零设置**：启动即运行 ESPHome 协议服务（端口 6053，原生 API 握手），
-Home Assistant 通过 ESPHome 集成一键采纳；房间布局、IR 码库、物理按键绑定、
-HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过设备暴露的
-`text` 实体下发，改动约 3 秒自动生效，App 无需重启。
+Home Assistant 通过 ESPHome 集成一键采纳；房间布局、IR 码库、HA 状态同步
+清单等**全部配置都在 Home Assistant 里完成**，通过设备暴露的 `text` 实体下发，
+改动约 3 秒自动生效，App 无需重启。物理按键绑定直接在面板上设置（§快捷键绑定）。
 
 界面参考原 HaRemote/Astrion 应用：深色面板、房间翻页、设备卡片网格，以及
 电视遥控（方向环/数字键盘）、空调（温度/模式/风速）、灯光（亮度/色温）、风扇
@@ -27,8 +27,8 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
 3. 创建自动化：按类别勾选想出现在面板上的设备（灯/开关/空调/窗帘/媒体播放器…，可多选），选择面板的 **Panel Layout** 实体，保存
 
 面板自动按家里的房间分组、设备沿用 HA 名称；HA 重启、每天凌晨 4 点、设备变动时
-自动刷新。同时自动把 **灯/窗帘/音乐/空调** 四个实体键绑到对应设备（创建时可改为
-指定任意一台同步到面板的设备；也可完全自定义 `134=实体; 135=实体…`）。
+自动刷新。物理按键的"一键直达"在遥控器上绑定：下拉面板 → 快捷键绑定，
+从同步过来的设备里任选一台。
 
 # 功能
 
@@ -41,7 +41,7 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
 - 面板 → HA 事件上行：用户跳页/按遥控键以 event 实体（`panel_page_visited`/
   `panel_button_pressed`）+ `panel_pages` 页面清单上报，对应原集成的
   `page_visited`/`control_command`/`navigate_list_upload`，自动化可订阅
-- 物理按键：短按/长按动态语义跟随当前设备页（原版物理键体系）+ HA 下发的按键绑定
+- 物理按键：短按/长按动态语义跟随当前设备页（原版物理键体系）+ 面板本机快捷键绑定（长按实体键即进入绑定页）
 - 导航：`navigate`（A 型，300ms 复位）与 `current_activity`（B 型持久）select，
   HA 自动化可驱动面板跳页，面板操作也会回报 HA
 - 屏保：`screen_saver_timeout`（number，0=关闭）配置空闲超时，超时显示全屏
@@ -76,7 +76,6 @@ HA 状态同步清单等**全部配置都在 Home Assistant 里完成**，通过
 - 安装并运行 App，服务自动启动（无任何 App 内设置）
 - Home Assistant → ESPHome 集成采纳设备（或手动 IP + 端口 6053）
 - 将布局 JSON 写入 `text.astrion_layout`，IR 码库写入 `text.astrion_ir_codes`，
-  按键绑定写入 `text.astrion_key_bindings`
 - 详见 [配置指南](docs/HA_PANEL_SETUP.md)（含 JSON schema、按键码表、自动化示例、
   语音/降噪实体说明）
 

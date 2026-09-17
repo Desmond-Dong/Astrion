@@ -1,8 +1,16 @@
 package com.example.astrion.services
 
+import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
 import android.media.MediaRecorder
+import android.os.BatteryManager
+import android.os.Build
+import android.os.Environment
+import android.os.StatFs
+import android.os.SystemClock
 import androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC
 import androidx.media3.common.C.AUDIO_CONTENT_TYPE_SPEECH
 import androidx.media3.common.C.USAGE_ASSISTANT
@@ -39,16 +47,22 @@ import com.example.astrion.settings.PlayerSettingsStore
 import com.example.astrion.settings.VoiceSatelliteSettingsStore
 import com.example.astrion.settings.availableStopWords
 import com.example.astrion.settings.availableWakeWords
+import com.example.astrion.utils.getLocalIpAddress
 import com.example.esphomeproto.api.VoiceAssistantFeature
 import com.example.esphomeproto.api.deviceInfoResponse
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.isActive
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
@@ -350,6 +364,9 @@ class DeviceBuilder @Inject constructor(
         // Gateway/activity controls
         entities += buildActivityEntities(scope, keyAllocator, deviceHolder)
 
+        // Android diagnostics (battery / WiFi / storage / memory / uptime …)
+        entities += buildDiagnosticEntities(scope, keyAllocator)
+
         entities += ButtonEntity(
             key = keyAllocator.next(),
             name = "Wake Assistant",
@@ -381,14 +398,6 @@ class DeviceBuilder @Inject constructor(
                 objectId = "astrion_ir_codes",
                 initialState = config.irCodesJson,
                 onText = { json -> panelConfigStore.applyIrCodesJson(json) }
-            ),
-            TextEntity(
-                key = keyAllocator.next(),
-                name = "Key Bindings",
-                objectId = "astrion_key_bindings",
-                initialState = config.keyBindingsJson,
-                disabledByDefault = true,
-                onText = { json -> panelConfigStore.applyKeyBindingsJson(json) }
             )
         )
     }
@@ -400,6 +409,129 @@ class DeviceBuilder @Inject constructor(
      * [DisplaySettingsStore] and picked up live by the screensaver controller
      * and the [RaiseToWakeController].
      */
+    /**
+     * Android diagnostics reported as hidden text sensors (☰): battery,
+     * WiFi signal, storage, memory, uptime, IP, system and app version.
+     * Refreshed every 30 s — cheap reads only, negligible battery impact.
+     */
+    private fun buildDiagnosticEntities(
+        scope: CoroutineScope,
+        keyAllocator: EntityKeyAllocator,
+    ): List<Entity> {
+        val battery = MutableStateFlow("")
+        val wifiSignal = MutableStateFlow("")
+        val storage = MutableStateFlow("")
+        val memory = MutableStateFlow("")
+        val uptime = MutableStateFlow("")
+        val ipAddress = MutableStateFlow("")
+        val system = MutableStateFlow("")
+        val appVersion = MutableStateFlow("")
+
+        suspend fun refresh() {
+            val bm = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            if (bm != null) {
+                val level = bm.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = bm.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                val plugged = bm.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+                if (level >= 0 && scale > 0) {
+                    battery.value = "${level * 100 / scale}%" + if (plugged) " (charging)" else ""
+                }
+            }
+            wifiSignal.value = runCatching {
+                val wm = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                "${wm.connectionInfo.rssi} dBm"
+            }.getOrDefault("n/a")
+            storage.value = runCatching {
+                val stat = StatFs(Environment.getDataDirectory().path)
+                "%.1f / %.1f GB".format(
+                    stat.availableBytes / 1e9,
+                    stat.totalBytes / 1e9
+                )
+            }.getOrDefault("n/a")
+            memory.value = runCatching {
+                val mi = ActivityManager.MemoryInfo()
+                (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+                    .getMemoryInfo(mi)
+                "%.0f MB free / %.0f MB".format(mi.availMem / 1e6, mi.totalMem / 1e6)
+            }.getOrDefault("n/a")
+            uptime.value = runCatching {
+                "%.1f h".format(SystemClock.elapsedRealtime() / 3_600_000.0)
+            }.getOrDefault("n/a")
+            ipAddress.value = getLocalIpAddress() ?: ""
+            system.value = "Android ${Build.VERSION.RELEASE} · ${Build.MODEL}"
+            appVersion.value = runCatching {
+                context.packageManager
+                    .getPackageInfo(context.packageName, 0).versionName.orEmpty()
+            }.getOrDefault("")
+        }
+
+        scope.launch {
+            while (currentCoroutineContext().isActive) {
+                runCatching { refresh() }
+                delay(30_000)
+            }
+        }
+
+        return listOf(
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "Battery",
+                objectId = "diag_battery",
+                disabledByDefault = true,
+                getState = battery
+            ),
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "WiFi Signal",
+                objectId = "diag_wifi_rssi",
+                disabledByDefault = true,
+                getState = wifiSignal
+            ),
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "Storage",
+                objectId = "diag_storage",
+                disabledByDefault = true,
+                getState = storage
+            ),
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "Memory",
+                objectId = "diag_memory",
+                disabledByDefault = true,
+                getState = memory
+            ),
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "Uptime",
+                objectId = "diag_uptime",
+                disabledByDefault = true,
+                getState = uptime
+            ),
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "IP Address",
+                objectId = "diag_ip_address",
+                disabledByDefault = true,
+                getState = ipAddress
+            ),
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "System",
+                objectId = "diag_system",
+                disabledByDefault = true,
+                getState = system
+            ),
+            TextSensorEntity(
+                key = keyAllocator.next(),
+                name = "App Version",
+                objectId = "diag_app_version",
+                disabledByDefault = true,
+                getState = appVersion
+            )
+        )
+    }
+
     private fun buildDisplayEntities(
         keyAllocator: EntityKeyAllocator
     ): List<Entity> = listOf(

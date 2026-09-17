@@ -215,19 +215,13 @@ fun ShortcutBindScreen(
     viewModel: ShortcutBindViewModel = hiltViewModel(),
 ) {
     val layout by viewModel.layout.collectAsStateWithLifecycle()
-    // 原版：设备键只有 设备(按类型过滤)/房间 两页签；自定义键是 场景/房间
-    val tabs = if (ShortcutBindingStore.isSceneKey(keyCode)) {
-        listOf(BindTab.SCENE, BindTab.ROOM)
-    } else {
-        listOf(BindTab.DEVICE, BindTab.ROOM)
-    }
     val current = remember { viewModel.currentBinding() }
+    // 任意键都能绑：设备（全部同步设备）/ 场景 / 房间
     var tab by remember {
-        mutableStateOf(if (current?.type == "DeviceRoom") BindTab.ROOM else tabs.first())
+        mutableStateOf(if (current?.type == "DeviceRoom") BindTab.ROOM else BindTab.DEVICE)
     }
     // 选中的绑定；null = 未选（保存即解绑，原版行为）
     var selected by remember { mutableStateOf(current) }
-    val deviceTabLabel = ShortcutBindingStore.keyDeviceTabLabel(keyCode)
 
     Column(
         modifier = Modifier
@@ -257,8 +251,7 @@ fun ShortcutBindScreen(
                     color = RemoteColors.onSurface
                 )
                 Text(
-                    text = if (ShortcutBindingStore.isSceneKey(keyCode)) "绑定一台场景或脚本"
-                    else "绑定一台${ShortcutBindingStore.keyDeviceTabLabel(keyCode)}设备或一个房间",
+                    text = "绑定一台同步到面板的设备、场景或房间",
                     color = RemoteColors.onSurfaceVariant,
                     fontSize = 13.sp
                 )
@@ -266,7 +259,7 @@ fun ShortcutBindScreen(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            tabs.forEach { entry ->
+            BindTab.entries.forEach { entry ->
                 val isSel = entry == tab
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -274,7 +267,7 @@ fun ShortcutBindScreen(
                     modifier = Modifier.clickable { tab = entry }
                 ) {
                     Text(
-                        text = if (entry == BindTab.DEVICE) deviceTabLabel else entry.label,
+                        text = entry.label,
                         color = if (isSel) Color.White else RemoteColors.onSurface,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -322,9 +315,8 @@ fun ShortcutBindScreen(
                 }
 
                 BindTab.DEVICE -> layout.rooms.forEach { room ->
-                    // 原版核心：设备键只能绑它专属类型的设备
-                    val keyType = ShortcutBindingStore.keyDeviceType(keyCode)
-                    val cards = room.cards.filter { it.resolvedType == keyType }
+                    // 任意键都能绑同步到面板的任意设备（场景在"场景"页签）
+                    val cards = room.cards.filter { it.resolvedType != PanelCardTypes.SCENE }
                     if (cards.isNotEmpty()) {
                         item(key = "${room.title}-device-header") { RoomHeader(room) }
                         items(cards.size, key = { cards[it].cardId }) { index ->

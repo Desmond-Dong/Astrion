@@ -65,22 +65,6 @@ class ShortcutBindingStore @Inject constructor(
 
         fun isBindableKey(keycode: Int): Boolean = keycode in BINDABLE_KEYS
 
-        /**
-         * 原版核心逻辑：每个物理键**固定专属一类设备**（绑定页里只能选该类型的
-         * 设备，未绑定时按下也只在该类型里兜底）。138–141 是自定义/场景键，
-         * 只能绑场景（scene/script）。
-         */
-        fun keyDeviceType(keycode: Int): String? = when (keycode) {
-            134 -> PanelCardTypes.LIGHT
-            135 -> PanelCardTypes.COVER
-            136 -> PanelCardTypes.MEDIA_PLAYER
-            137 -> PanelCardTypes.CLIMATE
-            else -> null
-        }
-
-        /** 自定义/场景键（F8–F11）：只能绑场景或脚本。 */
-        fun isSceneKey(keycode: Int): Boolean = keycode in 138..141
-
         /** 按键显示名（原版 shortcut_key_name_format："<设备类型>按键"）。 */
         fun keyDisplayName(keycode: Int): String = when (keycode) {
             134 -> "灯按键"
@@ -92,15 +76,6 @@ class ShortcutBindingStore @Inject constructor(
             140 -> "自定义按键三"
             141 -> "自定义按键四"
             else -> "按键$keycode"
-        }
-
-        /** 绑定页里"设备"页签的标题（原版用键的设备类型名，如 灯具/窗帘）。 */
-        fun keyDeviceTabLabel(keycode: Int): String = when (keycode) {
-            134 -> "灯具"
-            135 -> "窗帘"
-            136 -> "音乐"
-            137 -> "空调"
-            else -> "设备"
         }
     }
 }

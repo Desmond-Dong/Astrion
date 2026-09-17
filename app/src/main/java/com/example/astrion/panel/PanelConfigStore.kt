@@ -30,8 +30,6 @@ data class PanelConfig(
     val layoutJson: String = "",
     /** Raw JSON of [IrCodebook] received through the `astrion_ir_codes` text entity. */
     val irCodesJson: String = "",
-    /** Raw JSON of [PanelKeyBindings] received through the `astrion_key_bindings` text entity. */
-    val keyBindingsJson: String = "",
 )
 
 private val DEFAULT = PanelConfig()
@@ -114,9 +112,6 @@ class PanelConfigStore @Inject constructor(
             return PanelLayout(rooms, layout.pages, layout.syncEntities)
         }
 
-    val keyBindings: Flow<PanelKeyBindings> =
-        raw.map { PanelKeyBindings.parseFlexible(it.keyBindingsJson) ?: PanelKeyBindings() }
-
     /**
      * Home Assistant entity ids the panel subscribes to, parsed from the
      * layout (`sync_entities`). `entity.attribute` entries are preserved for
@@ -168,18 +163,7 @@ class PanelConfigStore @Inject constructor(
         else current.copy(irCodesJson = json.trim())
     }
 
-    /**
-     * Applies physical key binding JSON received from Home Assistant. Invalid
-     * JSON keeps the previous bindings.
-     */
-    suspend fun applyKeyBindingsJson(json: String): Boolean =
-        apply("key_bindings", json) { current ->
-            if (PanelKeyBindings.parseFlexible(json) == null) null
-            else current.copy(keyBindingsJson = json.trim())
-        }
-
-    private suspend fun apply(
-        tag: String,
+    private suspend fun apply(        tag: String,
         json: String,
         transform: (PanelConfig) -> PanelConfig?
     ): Boolean {
