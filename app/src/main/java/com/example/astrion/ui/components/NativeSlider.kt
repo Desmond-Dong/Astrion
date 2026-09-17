@@ -127,7 +127,7 @@ fun NativeSlider(
                             change.consume()
                             break
                         }
-                        if (change.positionChanged()) {
+                        if (change.position != change.previousPosition) {
                             val delta = change.position.x - startX
                             if (dragging || abs(delta) > viewConfiguration.touchSlop) {
                                 dragging = true
@@ -177,7 +177,7 @@ fun NativeSlider(
             shape = CircleShape,
             color = thumbColor,
             modifier = Modifier
-                .offset { IntOffset(roundToInt((widthPx - thumbPx).coerceAtLeast(0) * fraction), 0) }
+                .offset { IntOffset(roundToInt((widthPx - thumbPx).coerceAtLeast(0f) * fraction), 0) }
                 .size(thumbSize)
                 .align(Alignment.CenterStart)
         ) {}
