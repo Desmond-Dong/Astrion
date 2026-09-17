@@ -1,7 +1,7 @@
 package com.example.astrion.ui.screens.panel
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,7 +67,7 @@ import javax.inject.Inject
 class ShortcutKeysViewModel @Inject constructor(
     panelConfigStore: PanelConfigStore,
     shortcutBindingStore: ShortcutBindingStore,
-    keyRouter: KeyRouter,
+    private val keyRouter: KeyRouter,
 ) : ViewModel() {
     val bindings = shortcutBindingStore.bindings
 
@@ -182,7 +182,7 @@ class ShortcutBindViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     panelConfigStore: PanelConfigStore,
     private val shortcutBindingStore: ShortcutBindingStore,
-    keyRouter: KeyRouter,
+    private val keyRouter: KeyRouter,
 ) : ViewModel() {
     val keyCode = savedStateHandle.toRoute<ShortcutBindRoute>().keyCode
 
@@ -369,11 +369,7 @@ private fun BindRow(
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = if (selected) RemoteColors.accentContainer else RemoteColors.surfaceVariant,
-        border = if (selected) {
-            Modifier.border(1.dp, RemoteColors.accent, RoundedCornerShape(14.dp))
-        } else {
-            Modifier
-        },
+        border = if (selected) BorderStroke(1.dp, RemoteColors.accent) else null,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
