@@ -166,10 +166,10 @@ class KeyBindingExecutor @Inject constructor(
         val cards = layout.rooms.flatMap { it.cards }
 
         val defaults = listOf(
-            Triple(134, PanelCardTypes.LIGHT),
-            Triple(135, PanelCardTypes.COVER),
-            Triple(136, PanelCardTypes.MEDIA_PLAYER),
-            Triple(137, PanelCardTypes.CLIMATE)
+            134 to PanelCardTypes.LIGHT,
+            135 to PanelCardTypes.COVER,
+            136 to PanelCardTypes.MEDIA_PLAYER,
+            137 to PanelCardTypes.CLIMATE
         )
         val result = mutableListOf(
             KeyBinding(133, false, KeyBindingActions.VOICE),
