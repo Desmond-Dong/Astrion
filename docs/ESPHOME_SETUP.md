@@ -1,325 +1,229 @@
-# Astrion 面板 — ESPHome / Home Assistant 配置指南
+# Astrion 面板 — ESPHome / Home Assistant 配置指南（零基础版）
 
-App 端几乎没有设置界面：启动即运行 ESPHome 卫星服务（端口 6053），绝大部分配置都在
-Home Assistant 里通过 ESPHome 集成完成（布局、红外码库、按键绑定、屏保、OTA 等全部
-由 HA 实体下发）。唯一在设备上直接操作的是**快捷键绑定**（一键直达某个设备/房间，
-见 §6）——这是唯一存储在面板本地、不依赖 HA 推送的功能；删除应用数据后重新在设备上
-绑一次即可，HA 推送的其余配置重推一次就恢复。
+## 1. 这个面板是怎么工作的（30 秒看懂）
 
-**两步上手**：① ESPHome 集成采纳设备 → ② 把红外码库写进
-`text.astrion_ir_codes` 即可遥控（单行文本，无需 JSON）。面板布局（`astrion_layout`）
-是可选的：不推送时面板直接按码库生成默认房间；推送时也只需要极简行格式
-（卡片 `name` + `entity_id`，其余字段都有缺省值，见 §4）。
+面板 = 一台**自动运行的遥控器** + 一个 **Home Assistant 的 ESPHome 设备**。
+
+- 房间、设备、按键干什么活，**全部由 Home Assistant（下称 HA）决定**；面板开机自己运行，不需要登录、不需要输地址。
+- 面板上唯一需要动手配置的只有一件事：**快捷键绑定**（按哪个键直达哪个灯/空调，见 §5），在面板屏幕上点几下就完成。
+- 和原装系统对比（使用逻辑保持一致，但更简单）：
+
+| 原装系统 | 本面板 |
+|---|---|
+| 面板显示二维码 → 手机扫码打开网页 → 手工填 HA 地址和长期令牌 | HA 的 **ESPHome 集成里点一下"采纳"**，不需要令牌 |
+| 设备/房间来自 HA 里的特殊卡片配置 | 来自 `astrion_layout` 一行文本（§3），或者干脆不配、自动生成 |
+| 添加设备按钮 = 连接 HA | 采纳后自动连接；底部按钮只做"刷新" |
+| 设置 → 快捷键 | 快捷面板 → 快捷键绑定（+ 长按实体键直达，§5） |
+| 下拉快捷面板 | 下拉快捷面板（音量/亮度/网络/系统设置，一致） |
 
 ---
 
-## 1. 接入
+## 2. 零基础上手（跟着点就行）
 
-1. 安装并打开 App（部署为系统 HOME 时开机自动进入），服务自动启动。
-2. Home Assistant → 设置 → 设备与服务 → ESPHome 集成，采纳发现的设备
-   （或手动用设备 IP + 端口 6053 添加）。
+**第 1 步**：面板插电，让它和你的手机/电脑连**同一个路由器**（面板首次连 WiFi：面板上下拉快捷面板 → 系统设置，进入系统 WiFi 设置）。
 
-采纳后设备上会出现这些实体（全部由 HA 侧控制；标 ☰ 的高级实体默认隐藏，
-在实体卡片里开启"显示"后才会出现在设备页）：
+**第 2 步**：在手机或电脑浏览器打开 HA → **设置 → 设备与服务** → 页面上方的 **ESPHome**：
+- 列表里会自动出现本面板，点 **采纳**；
+- 没看到就点集成页的 **+ 设备 / 其他**，地址填面板上显示的 `IP`，端口 `6053`（面板 IP 在 面板下拉快捷面板 → 网络 处可见；未采纳时面板首页也会大字显示）。
 
-| 实体 | 类型 | 用途 |
-|---|---|---|
-| `astrion_layout` | text | **面板布局 JSON**（房间/卡片/设备树，见 §2） |
-| `astrion_ir_codes` | text | **IR 码库 JSON**（见 §3） |
-| `astrion_key_bindings` | text | **物理按键绑定 JSON**（见 §4） |
-| `navigate` | select | A 型复位选择器：选房间名 → 面板跳到该房间页（300ms 后自动复位） |
-| `current_activity` | select | B 型持久选择器：镜像面板当前页面，供自动化读取 |
-| `reconnect_ha` | button | 触发面板重连 |
-| `media_player` | media_player | 语音卫星音频（外放） |
-| `mute_microphone` | switch | 麦克风静音 |
-| `enable_wake_sound` / `repeat_timer_sound` | switch | 语音提示音 |
-| `wake_word` / `second_wake_word` / `stop_word` | select | 唤醒词/停止词选择（`second_wake_word` 选 `None` 表示不启用） |
-| `wake_word_sensitivity` | number | 唤醒词灵敏度 0.01–0.50（阈值 = 1 − 灵敏度，默认 0.03 即模型默认 0.97 阈值），运行时即时生效 |
-| `vad_threshold` | number | 本地说话结束检测（设备端 VAD）静音阈值 0–0.1（步进 0.001，默认 0.008 = 满幅的 0.8%）；`0` = 关闭本地检测，回退为等待 HA 侧 VAD（见 §3） |
-| `vad_timeout` | number | 本地说话结束检测的静音时长（秒，0.3–5，步进 0.1，默认 1.2）；说完话静音达到该时长后面板主动结束语音上传 |
-| `wake_assistant` | button | 远程触发一次免唤醒对话（等同按设备麦克风键） |
-| `noise_suppression` / `echo_cancellation` / `auto_gain` | switch ☰ | 硬件降噪/回声消除/自动增益（机带麦克风，挂载到采集 session，设备不支持时自动跳过）。麦克风固定为机带默认源，语音固定外放，无需选择 |
-| `media_title` / `media_artist` | text_sensor | 面板媒体元数据 |
-| `infrared` | infrared | **硬件红外发射器**（始终存在）：HA 原生红外直接调用，`remote.send_command`/自动化发原始时序都走它 |
-| `<设备名>`（每个码库设备） | infrared | 码库设备的原始时序直发（ESPHome infrared 服务） |
-| `<按键> (<设备名>)`（每个码库按键） | button | 单键红外发射 |
-| `panel_page_visited` | event | 用户在面板上跳页时触发 `page_visited`（原 `astrion/page_visited`，HA 发起的跳页不触发） |
-| `panel_button_pressed` | event | `button_pressed`（屏幕上的遥控键）/ `key_pressed` / `key_long_pressed`（**任意物理按键**，短按/长按，原 `astrion/control_command`） |
-| `panel_last_key` | text_sensor | 最后按下的物理键键码，如 `135` / `135_long`，配合按键事件实现任意键绑定 |
-| `panel_pages` | text_sensor | 面板当前页面清单，逗号分隔（原 `astrion/navigate_list_upload`） |
-| `screen_saver_timeout` | number | 屏保空闲超时（秒，0–600，步进 5，默认 0=关闭）；无按键/触摸达到该时长后面板显示全屏时钟/日期/电量/HA 连接状态，任意按键或触摸即退出 |
-| `raise_to_wake_threshold` | number ☰ | 抬手唤醒加速度阈值（m/s²，0–10，步进 0.1，默认 0=关闭）；面板熄屏时被拿起（加速度突变超阈值）即自动亮屏，判定间隔 3 秒防抖 |
-| `astrion_ota_manifest` | text ☰ | **OTA 更新清单 JSON**（`{version, url, sha256, force?}`，见 §12）；version 比面板已装版本新时面板弹出更新横幅 |
-| `astrion_ota_install` | button ☰ | 触发一次 OTA 下载→SHA-256 校验→安装（root 走 `pm install -r`，无 root 走系统安装确认弹窗），等价于点按面板横幅上的"安装" |
+**第 3 步**：完成。面板自动出现设备，拿起就能遥控。
 
-## 3. 语音（麦克风 / 免唤醒 / 灵敏度 / 降噪）
+到此已经可以正常用了。想分房间、加电视/空调遥控、绑物理按键、开屏保，往下看对应章节，每件事都只需要"往一个框里填一句话"或"点几下屏幕"。
 
-- **麦克风按键（免唤醒对话）**：设备上的语音键（X9/HA10=131，HA100=133）在
-  任何页面按下都会直接开始一次 Assist 对话，不需要唤醒词；松开语速说完即自动
-  结束。HA 侧的 `wake_assistant` 按钮等价触发。
-- **唤醒词**：`wake_word` / `second_wake_word` 选择模型，`wake_word_sensitivity`
-  调灵敏度（默认 0.03 = 模型默认阈值 0.97；调大更灵敏、误唤醒也会增多），即时生效。
-- **麦克风**：固定使用机带麦克风（原官方应用同款调用），无需选择；硬件
-  降噪/回声消除/自动增益默认开启，可用开关逐项调节。
-- **说话结束判定（本地 VAD）**：面板在推流的同时做静音检测——说完话（静音持续
-  `vad_timeout` 秒、且前面有真实语音，音量阈值 `vad_threshold`）即向 HA 发送
-  "音频结束"帧并进入识别阶段，**不依赖 HA 侧 VAD**。部分 HA 配置/设备上服务端
-  VAD 始终不触发，表现为一直停在"聆听中"、没有任何响应，此时保持默认即可。
-  对话收尾太快（说话中间停顿被截断）就调大 `vad_timeout`；环境太吵把末尾噪声
-  当语音就调大 `vad_threshold`；设 `vad_threshold = 0` 可完全关闭本地检测。
-- **外放**：语音一律外放（扬声器），TTS/媒体通过 `media_player` 实体播报，
-  音量/静音在 HA 中直接调节。
+> 写文本类实体时的唯一规矩：**输入框是单行的，不能换行**。本文章节里的多行示例只是为了易读，实际填写时用分号 `;` 把多条连成一行。
 
-## 4. 面板布局 `astrion_layout`（推荐：一行一个房间，无需 JSON）
+---
 
-> **先读这个**：text 实体是**单行**输入框，不能换行、没法手写多行 JSON。
-> 本文示例写成多行只是为了易读；**实际写入时把每条记录用 `;` 连成一行**。
-> 需要超长配置时用 §7 的 `input_text` + 自动化方案（服务调用下发单行字符串）。
+## 3. 房间与设备：`astrion_layout`（不填也行）
 
-**最简单写法**——`房间=实体1, 实体2`，多条记录用 **分号** 隔开（分号就是"换行"），类型/图标/状态全部自动：
+不填时：面板按红外码库（§4）自动生成一个"所有设备"房间；HA 里有什么就用什么。
+
+想自己分房间，往 `text.astrion_layout` 填一行：
 
 ```
 客厅=remote.tv, media_player.tv | 电视; 卧室=light.bed, fan.bed
 ```
 
-语法要点：
+含义：`房间=实体ID, 实体ID`，多个房间用分号隔开。规则：
 
-- `| 后面` 是该行唯一设备卡的显示别名（可省略）
-- 不带 `=` 的行表示"所有设备"房间：`light.ceiling, climate.ac`
-- `#` 开头为注释
-- 实体类型自动推断：light/climate/fan/cover/media_player/remote(→电视)/switch/scene/weather
-- 这些实体同时自动加入状态订阅，无需再填 `sync_entities`
+- 实体 ID 在 HA 里点开任意设备详情页就能看到（齿轮图标旁）；
+- `| 后面` 是显示别名，可不写；
+- 不带 `=` 的一行 = "所有设备"房间；
+- `#` 开头是注释；分号就是换行；
+- 设备类型（灯/空调/窗帘/风扇/电视…）从实体自动识别，不用指定；这些实体也会被自动订阅状态。
 
-写进 `astrion_layout` 文本实体即生效。**只推 `astrion_ir_codes` 也行**——布局为空时会用码库自动生成"所有设备"房间。
+改完约 3 秒面板自动刷新，不用重启。
 
-### 完整 JSON 结构（仅供参考，必须单行下发）
-
-面板也接受完整 JSON（自定义 tv 卡按键、显式 `sync_entities` 等场景）。但
-**JSON 只能压成一行写入**，下面的多行排版只是字段参考：
+<details>
+<summary>高级：完整 JSON 结构（仅供参考，必须压成一行下发）</summary>
 
 ```json
-{"rooms": [{"title": "客厅", "cards": [{"type": "tv", "uuid": "tv1", "name": "客厅电视", "tv_type": "android_tv", "entities": [{"key": "POWER", "entity_id": "remote.tv", "value": "POWER"}, {"key": "VOLUME_UP", "entity_id": "media_player.tv"}]}, {"type": "light", "name": "吸顶灯", "uuid": "light1", "entities": [{"entity_id": "light.ceiling", "alias": "主灯"}]}, {"type": "climate", "name": "客厅空调", "uuid": "ac1", "entities": [{"entity_id": "climate.ac"}]}]}, {"title": "卧室", "cards": []}], "pages": ["全屋"], "sync_entities": ["light.ceiling", "climate.ac", "climate.ac.temperature", "climate.ac.current_temperature", "climate.ac.fan_mode", "media_player.tv", "media_player.tv.media_title", "media_player.tv.media_artist"]}
+{"rooms": [{"title": "客厅", "cards": [{"type": "tv", "uuid": "tv1", "name": "客厅电视", "tv_type": "android_tv", "entities": [{"key": "POWER", "entity_id": "remote.tv", "value": "POWER"}, {"key": "VOLUME_UP", "entity_id": "media_player.tv"}]}]}], "pages": ["全屋"], "sync_entities": ["light.ceiling", "climate.ac.temperature"]}
 ```
 
-字段含义见下；日常配置用上面的行格式就够了。
+字段：card `type`（tv/light/fan/scene/media-player/climate/cover/switch/weather/host/switch-monitor）、`uuid`（页面路由 id，缺省自动生成）、`tv_type`（android_tv 或 apple_tv）、`percentage_step`（风扇档位步长）、entities[].`key`/`value`（电视卡按键名与实际红外命令名）、`alias`（显示名）、`pages`（附加导航页）、`sync_entities`（额外订阅的实体属性，支持 `实体ID.属性` 形式）。日常用上面的行格式就够了。
+</details>
 
-### 字段说明
+---
 
-- **card `type`**（对齐原 aiks-\* 卡片）：
-  `tv` / `light` / `fan` / `scene` / `media-player` / `climate` / `cover` /
-  `switch` / `weather` / `host` / `switch-monitor`
-- **card `uuid`**：详情页路由 id；缺省时由 type+name 生成。
-- **card `tv_type`**：`android_tv`（默认）或 `apple_tv`。
-- **card `percentage_step`**：风扇档位步长（默认 20，最多 5 档）。
-- **entities[].`key`**：tv 卡的按键名（POWER、UP、DOWN、LEFT、RIGHT、CENTER、
-  BACK、HOME、MENU、VOLUME_UP、VOLUME_DOWN、MUTE、UN_MUTE、PLAY、PAUSE、
-  PLAY_PAUSE、CHANNEL_UP、CHANNEL_DOWN、NUM_0…NUM_9、DELETE …）。
-- **entities[].`value`**：remote 实体实际下发的命令名；缺省用 `key`。
-- **entities[].`alias`**：卡片显示别名。
-- **pages**：附加导航页（出现在 navigate/current_activity 选项里，房间标题自动加入）。
-- **sync_entities**：面板要订阅的 HA 实体状态。支持 `entity_id.attribute`
-  形式订阅单个属性（空调温度、媒体标题等就靠它，卡片状态与详情页数据全部来自这里）。
+## 4. 红外遥控
 
-### 卡片控制如何映射到 HA 服务
+面板自带红外发射头，两种用法（可同时用）：
 
-| 卡片/动作 | 面板行为 |
-|---|---|
-| tv 卡按键，码库命中 | **本地红外直发**（码库设备名 = 卡片 name） |
-| tv 卡按键，码库未命中 | `remote.send_command {entity_id, command}` |
-| tv 卡 media_player 实体 | `media_player.media_play / volume_up / volume_mute …` |
-| tv 卡 select/script/button 实体 | `select_option / script.turn_on / button.press` |
-| light | `light.turn_on{brightness_pct, color_temp_kelvin}` / `light.turn_off` |
-| climate | `climate.set_temperature / set_hvac_mode / set_fan_mode` |
-| fan | `fan.set_percentage{percentage}` |
-| cover | `cover.open_cover / stop_cover / close_cover` |
-| switch / scene | `<domain>.turn_on / turn_off` |
-| media-player | `media_player.media_play_pause / media_next_track / volume_set …` |
-
-## 5. 红外：推荐走 Home Assistant 原生红外（ESPHome infrared 协议）
-
-每个码库/设备都会以 **ESPHome `infrared` 实体**暴露，在 HA 2026.9+ 中即为
-**原生红外遥控器**：直接在 HA 里给这个 remote 实体配置命令（原生 UI/自动化/
-Broadlink 迁移均可），面板按键时自动 `remote.send_command` → HA →
-`infrared.transmit` → 面板硬件发射。**面板里不需要填任何红外码。**
-
-面板电视卡按键的派发顺序：本地码库命中 → 本地直发；否则 → `remote.send_command`
-交给 HA（原生红外即走这条）。
-
-### 可选：面板本地码库 `astrion_ir_codes`
-
-若想让某个设备脱离 HA 直接本地发射，才需要推送本地码库。支持极简行格式
-（一行一个按键，`设备 | 按键=码`）：
+1. **HA 原生红外（推荐，面板里零配置）**：采纳后面板会以 ESPHome `infrared` 实体出现，在 HA 2026.9+ 就是一个原生红外遥控器——在 HA 里给它配命令（原生 UI / 自动化 / 从旧遥控器迁移都行），面板直接可用。
+2. **面板本地码库 `text.astrion_ir_codes`（可选）**：想让某些键不经过 HA、面板直接发射时才需要。格式 `设备 | 按键=码`，一行一个键（实际填成一行，分号分隔）：
 
 ```
-# 注释
-客厅电视 | POWER=38000,9000,4500,560,560,560,1690,...
-客厅电视 | MUTE=sGipAAECAwQFBgcICQ==
-机顶盒 | POWER=JgBMACHgERAQERAAHQAA
+客厅电视 | POWER=38000,9000,4500,560,560,560,1690,...; 客厅电视 | MUTE=sGipAAECAwQFBgcICQ==
 ```
 
-（多行仅为易读：实际写入 text 实体时是**一行**，用 `;` 分隔。）
+码串自动识别三种格式：逗号时序、Broadlink base64、AES base64。码库里的设备名和布局里电视卡的 `name` 一致时，按该键面板直接本地发射；不一致或没配就走 HA（第 1 种方式）。
 
-码串支持三种格式（自动识别）：逗号时序、Broadlink base64、AES base64。
-设备名与布局里 tv 卡的 `name` 一致时按键本地直发。也兼容单行完整 JSON：
-`{"客厅电视": {"POWER": "...", "MUTE": "..."}}`。
+---
 
-每个本地码库设备同时暴露一个 `infrared` 实体（原始时序直发）和逐键 `button`。
+## 5. 快捷键绑定（面板上点几下就完成）
 
-## 6. 物理按键绑定（设备端快捷键 + HA 推送）
+每个物理键**天生专属一类设备**（和原装键位一致）：
 
-三层解析，优先级从高到低（原版 ShortcutKeyEventHandler 的顺序）：
-
-1. **HA 推送绑定** `astrion_key_bindings`（本节末尾，适合自动化批量下发）
-2. **设备端快捷键**（推荐，"一键快速进入"）
-3. **内置默认**：F4–F11（键码 134–141）打开第一张匹配类型的卡片，133 = 免唤醒语音，
-   132 = 回首页
-
-### 设备端绑定（推荐）
-
-按键与可绑定的设备类型是**一一对应**的（原版固件键位表）：
-
-| 物理键 | 键码 | 只能绑定 | 未绑定/长按行为 |
+| 物理键 | 只能绑定 | 没绑定时短按 | 长按 |
 |---|---|---|---|
-| 灯按键 (F4) | 134 | 灯 | 开/关切换 |
-| 窗帘按键 (F5) | 135 | 窗帘 | 打开窗帘页 |
-| 音乐按键 (F6) | 136 | 媒体播放器 | 打开媒体页 |
-| 空调按键 (F7) | 137 | 空调 | 打开空调页 |
-| 自定义按键一~四 (F8–F11) | 138–141 | 场景/脚本 | 执行场景 |
+| 灯按键 | 灯 | 打开第一张灯卡片 | 进绑定页 |
+| 窗帘按键 | 窗帘 | 打开第一张窗帘卡片 | 进绑定页 |
+| 音乐按键 | 媒体播放器 | 打开第一张媒体卡片 | 进绑定页 |
+| 空调按键 | 空调 | 打开第一张空调卡片 | 进绑定页 |
+| 自定义按键一~四 | 场景/脚本 | 进绑定页 | 进绑定页 |
 
-- **入口**：顶部下滑快捷面板 → **快捷键绑定**；或**长按任意可绑定键
-  直接进入该键的绑定页**（设备详情页已消费的键除外）。
-- 绑定页里从 **设备（按上面表格的类型过滤）/ 场景 / 房间** 里选一个目标，
-  点 **保存**；不选中直接保存 = **解除绑定**（再点一次已选中的项也会取消选中）。
-- 绑定后的行为（与原版一致）：
-  - 灯 / 开关 / 风扇 → 按当前状态**开/关切换**
-  - 场景 / 脚本 → **执行**
-  - 空调 / 窗帘 / 电视 / 媒体 → **打开设备详情页**（一键直达）
-  - 房间 → **跳到该房间页**
-- 绑定存在面板本地（`shortcut_bindings`），不需要 HA 参与即可工作。
+**怎么绑**（两种入口任选）：
+- 面板上下拉快捷面板 → **快捷键绑定**，选一个键；
+- 或者**直接长按那个物理键**，立刻进入它的绑定页。
 
-运行时按键语义总览：**设备详情页打开时，按键自动变成该设备的遥控**（空调页调温度、
-灯页调亮度、电视页方向键等，见下表）；未被页面消费的键才会落到上面的绑定解析。
+绑定页里选一个目标 → **保存**。不选中直接保存 = 解除绑定（再点一次已选中的也能取消）。
 
-| 键码 | 空调页 | 风扇页 | 灯页 | 电视页 | 媒体页 | 窗帘页 | 开关页 |
-|---|---|---|---|---|---|---|---|
-| 24 / 25 | 温度 +/− | 风速 +/− | 亮度 +/− | 音量 +/− | 音量 +/− | 位置 +/− | — |
-| 92 / 93 | 风速切换 | — | 色温 −/+ | 频道 −/+ | 上/下曲 | 翻转 −/+ | — |
-| 23 (OK) | — | — | — | 确认 | 播放暂停 | 停止 | — |
-| 132 (电源) | 开关 | 开关 | 开关 | — | — | 开/关切换 | 开关 |
-| 164 | — | — | — | 静音 | 静音 | — | — |
-| 19-22 / 4 / 82 | — | — | — | 方向/BACK/菜单 | — | — | — |
+绑定后的效果：灯/开关/风扇 = 开关切换；场景/脚本 = 执行；空调/窗帘/电视/媒体 = 直接打开它的遥控页；房间 = 跳到该房间。
 
-（24/25、92/93、132 在设备页内短按 ±1、长按 ±5 自动连发。）
+**设备页里物理键自动变成该设备的遥控**（进了空调页就是温度加减，进了灯页就是亮度）：
 
-### HA 推送绑定 `astrion_key_bindings`（高级，可选）
+| 键 | 空调页 | 风扇页 | 灯页 | 电视页 | 媒体页 | 窗帘页 |
+|---|---|---|---|---|---|---|
+| 音量 +/− | 温度 +/− | 风量 +/− | 亮度 +/− | 音量 +/− | 音量 +/− | 位置 +/− |
+| 通道 −/+ | 风速切换 | — | 色温 −/+ | 频道 −/+ | 上/下曲 | 翻转 −/+ |
+| OK | — | — | — | 确认 | 播放/暂停 | 停止 |
+| 电源键 | 开关 | 开关 | 开关 | — | — | 开/关 |
 
-**最简单写法**——`键码=目标`，多条记录用分号隔开（目标直接填实体 id，动作按域自动推断）：
+（步进类按键短按小步、长按大步自动连发。）
 
-```
-132=home; 135=light.ceiling; 136=scene.film; 132_long=climate.ac; 93=room:客厅; 96=voice
-```
+<details>
+<summary>高级：用 HA 批量下发按键绑定 <code>text.astrion_key_bindings</code></summary>
 
-- `键码_long=` 表示长按（800ms），不带后缀为短按
-- `home`/`voice`/`room:标题`/`card:卡片id` 是特殊动作；实体 id 则按域自动推断：
-  `scene`/`script` → 执行；`button` → 按压；`switch`/`light`/`fan` 等 → 按当前状态开/关切换
-- 也可用完整 JSON（同样必须**单行**，多行排版仅为易读）：
+一行式：`132=home; 135=light.ceiling; 136=scene.film; 132_long=climate.ac; 93=room:客厅; 96=voice`（`键码_long=` 为长按；`home`/`voice`/`room:标题`/`card:卡片id` 是特殊动作；实体 id 按域自动动作）。完整 JSON：`{"bindings": [{"keycode": 135, "action": "card", "target": "tv1"}]}`，`action` 可为 `room`/`card`/`service`/`home`/`voice`。HA 推送的绑定优先于面板本地绑定。
+</details>
+
+---
+
+## 6. 语音
+
+- **免唤醒对话**：按住面板的语音键（HA100 上是键码 133）直接说话，说完自动结束，不需要唤醒词。
+- **唤醒词**：在设备实体的 `wake_word` / `second_wake_word` 下拉里选；`wake_word_sensitivity` 调灵敏度（默认 0.03，调大更灵敏但误唤醒变多）。
+- **说完没反应**：面板自带"说完检测"（`vad_timeout` 静音秒数，`vad_threshold` 静音判定音量），默认即可用；说话被打断就调大 `vad_timeout`，环境吵就调大 `vad_threshold`，设 `vad_threshold = 0` 关闭本地检测。
+- 麦克风固定用机带麦克风；降噪/回声消除/自动增益默认开启，可用开关逐项调节。语音一律外放，音量在 HA 或面板下拉里调。
+
+---
+
+## 7. 面板上会出现的实体清单（自动生成，点开即用）
+
+| 实体 | 用途 |
+|---|---|
+| `astrion_layout` | 房间/设备布局（§3） |
+| `astrion_ir_codes` | 面板本地红外码库（§4） |
+| `astrion_key_bindings` | 批量下发按键绑定（§5 高级） |
+| `navigate` | 选一个房间名 → 面板跳过去（选完自动弹回） |
+| `current_activity` | 显示面板当前页面，供自动化读取 |
+| `reconnect_ha` | 让面板重连 HA |
+| `wake_assistant` | 远程触发一次免唤醒对话 |
+| `media_player` | 语音/TTS 音频外放 |
+| `mute_microphone` / `enable_wake_sound` / `repeat_timer_sound` | 麦克风静音 / 语音提示音 |
+| `wake_word` / `second_wake_word` / `stop_word` / `wake_word_sensitivity` | 唤醒词与灵敏度（§6） |
+| `vad_threshold` / `vad_timeout` | 说完检测参数（§6） |
+| `noise_suppression` / `echo_cancellation` / `auto_gain` ☰ | 降噪 / 回声消除 / 自动增益 |
+| `media_title` / `media_artist` | 面板正在播放的媒体信息 |
+| `infrared` | 硬件红外发射器（HA 原生红外，§4） |
+| 码库里的每个设备 / 每个按键 | 对应一个红外实体 / 一个按键按钮 |
+| `panel_page_visited` / `panel_button_pressed` / `panel_last_key` / `panel_pages` | 面板事件与状态，供自动化联动（§11） |
+| `screen_saver_timeout` | 屏保：空闲多少秒后显示全屏时钟（0–600 秒，0=关） |
+| `raise_to_wake_threshold` ☰ | 抬手唤醒：拿起面板自动亮屏（0–10，建议先试 4，0=关） |
+| `astrion_ota_manifest` / `astrion_ota_install` ☰ | OTA 更新清单 / 触发安装（§9） |
+
+（标 ☰ 的高级实体默认隐藏，在实体设置里打开"显示"即可。）
+
+---
+
+## 8. 屏保 / 充电 / 抬手唤醒
+
+- **屏保**：把空闲秒数填进 `number.screen_saver_timeout`（比如 30）。到时间面板显示全屏时钟/日期/电量，碰一下或按任意键即退出，不会误触遥控。
+- **充电动画**：插入充电器时自动短暂显示电量提示，无需配置。
+- **抬手唤醒**：`number.raise_to_wake_threshold` 设为大于 0（建议 4），面板熄屏时被拿起就自动亮屏约 10 秒；拿取很轻时调小数值，误触发多就调大。
+
+---
+
+## 9. OTA 自更新
+
+更新完全由 HA 驱动，不需要碰面板：把一行 JSON 写进 `text.astrion_ota_manifest`：
 
 ```json
-{"bindings": [{"keycode": 132, "action": "room", "target": "客厅"}, {"keycode": 135, "action": "card", "target": "tv1"}, {"keycode": 135, "long_press": true, "action": "service", "service": "scene.turn_on", "entity_id": "scene.film"}]}
+{"version": "1.2.1", "url": "https://example.com/Astrion-1.2.1.apk", "sha256": "<可选，APK 摘要>", "force": false}
 ```
 
-- `action`: `room`（target=房间标题）| `card`（target=卡片 uuid/cardId）|
-  `service`（service + entity_id/data）| `home` | `voice`。
-- `keycode` 为 Android 键码；`long_press` 缺省 false（长按 800ms 阈值）。
+版本比面板当前新时，面板顶部出现"发现新版本"横幅；点"安装"（或按 `button.astrion_ota_install`）自动 下载 → 校验 → 安装。有 root 静默安装，无 root 弹系统安装确认。
 
-## 7. 配置下发自动化示例（长内容走这里）
+---
 
-text 实体输入框短且单行，**长配置/完整 JSON 建议放在 `input_text` 里，再用
-自动化同步**到面板实体（值必须是单行，多条记录用 `;` 分隔）：
+## 10. 进阶：长配置的自动化下发
 
-```yaml
-# configuration.yaml
-input_text:
-  astrion_layout:
-    name: Astrion 布局
-    max: 10000
-```
+文本实体输入框短且单行。需要很长的布局/码库时，把内容放在 HA 的 `input_text`（长度可到 10000）里，再用一个自动化同步：
 
 ```yaml
 automation:
-  - alias: Astrion 同步布局
-    trigger:
-      - platform: state
+  - alias: 同步面板布局
+    triggers:
+      - trigger: state
         entity_id: input_text.astrion_layout
-    action:
-      - service: text.set_value
+    actions:
+      - action: text.set_value
         target:
           entity_id: text.astrion_layout
         data:
           value: "{{ states('input_text.astrion_layout') }}"
 ```
 
-配置写入后面板约 3 秒自动重建实体列表（IR 码库按键、导航选项），无需重启 App。
+（旧版 HA 用 `service:`/`service:` 写法，含义相同。）布局、码库、绑定建议各放一个 `input_text` 分别同步。
 
-> 注意：布局/码库/绑定是三份独立配置，建议各放一个 `input_text` 分别同步。
+---
 
-## 8. 面板 → Home Assistant 事件
+## 11. 面板 → HA 事件（想做联动时看）
 
-原 astrion 集成的 bus 事件在 ESPHome 里以 event 实体承载（ESPHome 事件不携带
-payload，需要细节时配合 `current_activity` / `panel_pages` 读取）：
+面板上的操作会以事件实体上报，直接在自动化里当触发器用：
+
+- `event.panel_button_pressed`：面板上的遥控键 / 任意物理键（短按 `key_pressed`、长按 `key_long_pressed`）；
+- `event.panel_page_visited`：用户在面板上跳页；
+- `panel_last_key`：最后按下的键码（如 `135` / `135_long`）；
+- `panel_pages` / `current_activity`：当前页面清单 / 当前页面。
+
+示例：有人在面板上操作了电视就发通知——
 
 ```yaml
 automation:
-  - alias: 有人在面板上操作了电视
-    trigger:
-      - platform: state
+  - alias: 面板操作提醒
+    triggers:
+      - trigger: state
         entity_id: event.panel_button_pressed
-    action:
-      - service: notify.mobile_app
+    actions:
+      - action: notify.notify
         data:
           message: "面板按下了遥控键（当前页面：{{ states('select.current_activity') }}）"
 ```
 
-面板本地新增/修改布局后，`panel_pages` 会自动上报新的页面清单；HA 发起的
-`navigate`/`current_activity` 变更不会回环触发 `panel_page_visited`。
+---
 
-## 9. 部署到设备（HA100）
+## 12. 部署到面板硬件
 
-GitHub Actions 每次 push 到 master 会构建 debug APK（artifact `Astrion-debug-apk`）。
-替换系统原装应用参见需求文档 §8.4（PMS 清理 + /system/priv-app 替换 + 重启）。
-Manifest 已声明 HOME 类别，替换系统 launcher 后开机直接进入面板。
-
-## 10. 屏保 / 充电动画（§3.10.7）
-
-- **屏保**：把空闲秒数写入 `number.screen_saver_timeout` 即启用（0–600，0=关闭）。
-  面板无按键/触摸达到该时长后，显示全屏深色屏保：大号时钟（HH:mm）、本地日期、
-  电量（<20% 红色）+ 充电标记、HA 断连标记。任意**按键或触摸**立即退出，
-  按键仅用于唤醒、不会穿透到遥控页面（与原版 ScreenSaverDialog 行为一致）。
-- **充电动画**：运行中插入充电器时，屏幕上短暂显示"充电中 xx%"提示（约 3.5 秒，
-  无需配置，对应原版 ChargingAnimationManager）。
-
-## 11. 抬手唤醒（§3.8）
-
-把 `number.raise_to_wake_threshold` 设为大于 0（建议先试 4，与原版 WakeupUtils
-灵敏度一致）即启用：面板熄屏时被拿起/移动，加速度突变（相对缓变重力基线的向量差）
-超过阈值就自动亮屏约 10 秒；3 秒内不重复触发，平时缓慢的转向/振动不会误触发。
-阈值 0（默认）关闭该功能；无加速度计的设备上设置后自动忽略。
-
-## 12. OTA 自更新（§3.9/§8.6）
-
-更新包不依赖云端服务，完全由 HA 驱动：把清单 JSON 写入
-`text.astrion_ota_manifest`：
-
-```json
-{"version": "1.2.1", "url": "https://example.com/Astrion-1.2.1.apk", "sha256": "<可选，APK 摘要>", "force": false}
-```
-
-- `version` 与面板已装版本做点分数值比较，只有更新时面板顶部才出现
-  "发现新版本" 横幅；`force: true` 表示收到清单后立即开始安装。
-- 点横幅上的"安装"或按 `button.astrion_ota_install`：下载 APK 到本地缓存 →
-  （有 sha256 时）流式校验 SHA-256 → 安装。设备有 root 时经
-  `su -c pm install -r`（APK 先暂存到 `/data/local/tmp/astrion_update.apk`）；
-  无 root 时走 PackageInstaller session，由系统弹出安装确认，用户确认后完成。
-- 安装期间横幅显示 下载中 x% → 校验 → 安装中；失败会显示原因（网络、校验、
-  root 不可用等）。
-- 该 text/button 实体默认隐藏（☰），需要在设备页启用后才会出现。
+GitHub Actions 每次 push 自动构建 APK（artifact `Astrion-debug-apk`）。正式部署：替换系统原装应用（/system/priv-app），面板 manifest 已声明 HOME 类别，开机直接进入本面板。

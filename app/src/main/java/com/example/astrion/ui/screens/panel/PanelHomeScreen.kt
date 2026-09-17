@@ -67,6 +67,7 @@ import com.example.astrion.ui.DeviceDetail
 import com.example.astrion.ui.ShortcutKeysRoute
 import com.example.astrion.ui.theme.RemoteBackground
 import com.example.astrion.ui.theme.RemoteColors
+import com.example.astrion.utils.getLocalIpAddress
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -631,6 +632,7 @@ private fun BottomActionBar(
 /** 原生空状态：大图标 + 金色标题 + 刷新按钮 + 底部二维码说明。 */
 @Composable
 private fun EmptyLayoutHint(onRefresh: () -> Unit) {
+    val panelIp = remember { getLocalIpAddress().orEmpty() }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -645,13 +647,24 @@ private fun EmptyLayoutHint(onRefresh: () -> Unit) {
             modifier = Modifier.size(110.dp)
         )
         Spacer(Modifier.height(18.dp))
-        Text(text = "暂无设备", color = RemoteColors.accent, fontSize = 22.sp)
-        Spacer(Modifier.height(10.dp))
+        Text(text = "三步开始使用", color = RemoteColors.accent, fontSize = 22.sp)
+        Spacer(Modifier.height(12.dp))
         Text(
-            text = "请先在 Home Assistant 中添加并采纳设备\n然后回到这里刷新",
+            text = "① 让面板和手机/电脑连同一个路由器\n" +
+                "② 打开 Home Assistant → 设置 → 设备与服务 → ESPHome\n" +
+                "③ 点本面板旁边的\"采纳\"即可（列表里没有就选\"其他\"，填下面的地址）",
             textAlign = TextAlign.Center,
-            color = RemoteColors.wifiHint,
-            fontSize = 15.sp
+            color = RemoteColors.onSurface,
+            fontSize = 15.sp,
+            lineHeight = 24.sp
+        )
+        Spacer(Modifier.height(18.dp))
+        Text(
+            text = if (panelIp.isBlank()) "本面板地址：见 下拉面板 → 网络"
+            else "本面板地址：$panelIp  端口 6053",
+            color = RemoteColors.accent,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
         )
         Spacer(Modifier.height(26.dp))
         Surface(
@@ -660,17 +673,11 @@ private fun EmptyLayoutHint(onRefresh: () -> Unit) {
             modifier = Modifier.clickable(onClick = onRefresh)
         ) {
             Text(
-                text = "刷新",
+                text = "我已采纳，刷新",
                 color = Color.White,
                 fontSize = 17.sp,
-                modifier = Modifier.padding(horizontal = 44.dp, vertical = 12.dp)
+                modifier = Modifier.padding(horizontal = 36.dp, vertical = 12.dp)
             )
         }
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "支持扫码 [使用扫码查看说明]",
-            color = RemoteColors.onSurface,
-            fontSize = 13.sp
-        )
     }
 }
