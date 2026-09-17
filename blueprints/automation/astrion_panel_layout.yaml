@@ -121,8 +121,8 @@ blueprint:
             - domain: vacuum
           multiple: true
     layout_part_entities:
-      name: 面板布局分片实体（Panel Layout 00–07）
-      description: 面板设备上的 Panel Layout 00 到 Panel Layout 07，按 00→07 顺序全部勾选
+      name: 面板布局分片实体（Panel Layout 00–03）
+      description: 面板设备上的 Panel Layout 00 到 Panel Layout 03，按 00→03 顺序全部勾选
       default: []
       selector:
         entity:
@@ -181,7 +181,7 @@ actions:
           {% set ns.rows = ns.rows + [a ~ '=' ~ (ns.by_area[a] | join(', '))] %}
         {% endfor %}
         {{ ns.rows | join('; ') }}
-  - if: "{{ all_entities | count > 0 and layout_part_entities | count == 8 }}"
+  - if: "{{ all_entities | count > 0 and layout_part_entities | count == 4 }}"
     then:
       - repeat:
           for_each: "{{ layout_part_entities }}"

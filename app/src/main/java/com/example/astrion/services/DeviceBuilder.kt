@@ -447,7 +447,6 @@ class DeviceBuilder @Inject constructor(
                         key = keyAllocator.next(),
                         name = "Panel Layout %02d".format(idx),
                         objectId = "astrion_layout_part_%02d".format(idx),
-                        disabledByDefault = true,
                         onText = { value -> scheduleLayoutAssembly(idx, value) }
                     )
                 )
