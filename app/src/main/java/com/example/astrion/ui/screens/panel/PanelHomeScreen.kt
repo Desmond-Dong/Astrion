@@ -640,7 +640,7 @@ private fun BottomActionBar(
     }
 }
 
-/** 原生空状态：大图标 + 金色标题 + 刷新按钮 + 底部二维码说明。 */
+/** 原生空状态：大图标 + 三步接入指引 + 本面板地址 + 刷新按钮。 */
 @Composable
 private fun EmptyLayoutHint(onRefresh: () -> Unit) {
     val panelIp = remember { getLocalIpAddress().orEmpty() }
