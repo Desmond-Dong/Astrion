@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.astrion.ui.theme.RemoteColors
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -76,6 +75,7 @@ fun NativeSlider(
 
     val fraction = ((value - valueRange.start) /
         (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+    val travelPx = (widthPx.toFloat() - thumbPx).coerceAtLeast(0f)
 
     val mapFromDrag: (startValue: Float, startX: Float, x: Float) -> Float =
         { startValue, startX, x ->
@@ -177,7 +177,7 @@ fun NativeSlider(
             shape = CircleShape,
             color = thumbColor,
             modifier = Modifier
-                .offset { IntOffset(roundToInt((widthPx - thumbPx).coerceAtLeast(0f) * fraction), 0) }
+                .offset { IntOffset((travelPx * fraction).toInt(), 0) }
                 .size(thumbSize)
                 .align(Alignment.CenterStart)
         ) {}
