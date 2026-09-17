@@ -99,11 +99,11 @@ class KeyBindingExecutor @Inject constructor(
     suspend fun handle(press: KeyPress): Boolean {
         if (press.cancel) return false
         val configured = panelConfigStore.keyBindings.first().bindings
-        // Out-of-the-box default: the HA100 mic key starts a hands-free
-        // conversation even before any bindings are pushed.
-        val bindings = configured.ifEmpty {
-            listOf(KeyBinding(keycode = 133, action = KeyBindingActions.VOICE))
-        }
+        // Out-of-the-box defaults mirror the original model key table (§4.1
+        // HA100A F4-F11): dedicated keys open the first matching card, the mic
+        // key starts a hands-free conversation. Any pushed binding overrides
+        // the defaults entirely.
+        val bindings = configured.ifEmpty { defaultBindings() }
         val binding = bindings
             .firstOrNull { it.keycode == press.keyCode && it.longPress == press.longPress }
             ?: return false
@@ -154,6 +154,33 @@ class KeyBindingExecutor @Inject constructor(
         val state = haStatesStore.states.value[entityId]?.state
         val turnOff = state == "on"
         return "${domain}.${if (turnOff) "turn_off" else "turn_on"}"
+    }
+
+    /**
+     * Fallback defaults used before any bindings are pushed: the dedicated
+     * hardware keys open the first matching card in the current layout
+     * (原版 HA100A 键位：134=灯 135=窗帘 136=音乐 137=空调).
+     */
+    private suspend fun defaultBindings(): List<KeyBinding> {
+        val layout = panelConfigStore.effectiveLayout.first()
+        val cards = layout.rooms.flatMap { it.cards }
+
+        val defaults = listOf(
+            Triple(134, PanelCardTypes.LIGHT),
+            Triple(135, PanelCardTypes.COVER),
+            Triple(136, PanelCardTypes.MEDIA_PLAYER),
+            Triple(137, PanelCardTypes.CLIMATE)
+        )
+        val result = mutableListOf(
+            KeyBinding(133, false, KeyBindingActions.VOICE),
+            KeyBinding(132, false, KeyBindingActions.HOME)
+        )
+        defaults.forEach { (keycode, type) ->
+            cards.firstOrNull { it.resolvedType == type }?.let { card ->
+                result.add(KeyBinding(keycode, false, KeyBindingActions.CARD, card.cardId))
+            }
+        }
+        return result
     }
 }
 
