@@ -3,6 +3,7 @@ package com.example.astrion.panel
 import android.content.Context
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import com.example.astrion.settings.DisplaySettings
 import com.example.astrion.settings.DisplaySettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -54,6 +55,11 @@ class ScreensaverController @Inject constructor(
     /** True while the display should be blacked out (charging + 熄屏). */
     val screenOff: StateFlow<Boolean> = _screenOff.asStateFlow()
 
+    private val _charging = MutableStateFlow(false)
+
+    /** True while the panel sits on the charger/dock. */
+    val charging: StateFlow<Boolean> = _charging.asStateFlow()
+
     private val _chargingFlash = MutableStateFlow(false)
 
     /** True while the short "charger plugged in" hint overlay should show. */
@@ -67,6 +73,9 @@ class ScreensaverController @Inject constructor(
 
     @Volatile
     private var charging = false
+
+    /** System brightness before the screen-off dim, restored on wake. */
+    private var previousBrightness = 0
 
     @Volatile
     private var lastInteractionRealtimeMs = SystemClock.elapsedRealtime()
@@ -104,14 +113,17 @@ class ScreensaverController @Inject constructor(
         }
         if (_screenOff.value) {
             Timber.d("Charging screen-off dismissed by user activity")
-            _screenOff.value = false
+            endScreenOff()
         }
     }
 
     /** Reports the current charging state (drives the 充电熄屏 behaviour). */
     fun setCharging(value: Boolean) {
+        if (charging == value) return
+        _charging.value = value
+        Timber.d("Charging state changed: $value (mode=${if (chargingScreenOff) "熄屏" else "屏保"})")
         charging = value
-        if (!value && _screenOff.value) _screenOff.value = false
+        if (!value) endScreenOff()
     }
 
     /** Shows the short charging hint (plugged in while running, §3.10.7). */
@@ -127,21 +139,59 @@ class ScreensaverController @Inject constructor(
 
     private fun tick() {
         val timeout = timeoutSeconds
-        if (timeout <= 0) {
-            if (_active.value) _active.value = false
+        val idleMs = SystemClock.elapsedRealtime() - lastInteractionRealtimeMs
+        val idleReached = timeout > 0 && idleMs >= timeout * 1000L
+
+        // 充电熄屏模式：空闲即熄（屏保已显示时也允许切到熄屏）
+        if (charging && chargingScreenOff) {
+            if (!idleReached) {
+                endScreenOff()
+                return
+            }
+            if (_screenOff.value) return
+            Timber.d("Charging idle: screen off requested (idle=${idleMs}ms, mode=熄屏)")
+            if (!tryGoToSleep()) {
+                startScreenOffFallback()
+            }
             return
         }
-        if (_active.value || _screenOff.value) return
-        val idleMs = SystemClock.elapsedRealtime() - lastInteractionRealtimeMs
-        if (idleMs >= timeout * 1000L) {
-            if (charging && chargingScreenOff) {
-                Timber.d("Charging idle: turning screen off after ${idleMs}ms")
-                if (!tryGoToSleep()) _screenOff.value = true
-            } else {
-                Timber.d("Screensaver shown after ${idleMs}ms idle")
-                _active.value = true
-            }
+
+        // 屏保模式（或未充电）
+        if (!idleReached) {
+            if (_active.value) _active.value = false
+            endScreenOff()
+            return
         }
+        if (_screenOff.value) return
+        if (_active.value) return
+        Timber.d("Screensaver shown after ${idleMs}ms idle")
+        _active.value = true
+    }
+
+    /** Blacks the display out and dims the backlight so it reads as 熄屏. */
+    private fun startScreenOffFallback() {
+        _screenOff.value = true
+        runCatching {
+            previousBrightness = Settings.System.getInt(
+                context.contentResolver, Settings.System.SCREEN_BRIGHTNESS
+            )
+            Settings.System.putInt(
+                context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, SCREEN_OFF_BRIGHTNESS
+            )
+        }.onFailure { Timber.w(it, "Failed to dim for screen-off") }
+    }
+
+    private fun endScreenOff() {
+        if (!_screenOff.value) return
+        _screenOff.value = false
+        runCatching {
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS,
+                if (previousBrightness > 0) previousBrightness else 128
+            )
+        }
+        Timber.d("Charging screen-off ended, brightness restored")
     }
 
     /**
@@ -164,5 +214,8 @@ class ScreensaverController @Inject constructor(
 
         /** How long the plug-in charging hint stays up. */
         const val CHARGING_FLASH_MS = 3500L
+
+        /** Backlight floor while the charging screen-off overlay is up. */
+        const val SCREEN_OFF_BRIGHTNESS = 1
     }
 }

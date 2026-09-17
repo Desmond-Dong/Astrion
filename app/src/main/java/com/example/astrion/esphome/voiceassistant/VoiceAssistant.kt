@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -46,7 +47,12 @@ class VoiceAssistant(
     coroutineContext: CoroutineContext,
     val voiceInput: VoiceInput,
     val voiceOutput: VoiceOutput,
-    private val vadConfig: suspend () -> VadConfig = { VadConfig.DISABLED }
+    private val vadConfig: suspend () -> VadConfig = { VadConfig.DISABLED },
+    /**
+     * Runtime gate for the whole wake-word/streaming pipeline (省电): while
+     * false the microphone loop is stopped entirely instead of idling.
+     */
+    val voiceEnabled: Flow<Boolean> = flowOf(true),
 ) : AutoCloseable {
     private val scope = CoroutineScope(
         coroutineContext + Job(coroutineContext.job) + CoroutineName("${this.javaClass.simpleName} Scope")
@@ -88,9 +94,11 @@ class VoiceAssistant(
     }
 
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    private fun startVoiceInput() = isConnected
-        .flatMapLatest { isConnected ->
-            if (isConnected) voiceInput.start() else emptyFlow()
+    private fun startVoiceInput() = combine(isConnected, voiceEnabled) { connected, enabled ->
+        connected && enabled
+    }
+        .flatMapLatest { run ->
+            if (run) voiceInput.start() else emptyFlow()
         }
         .onEach {
             handleAudioResult(audioResult = it)

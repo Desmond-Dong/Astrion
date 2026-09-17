@@ -43,6 +43,12 @@ data class MicrophoneSettings(
      * utterance on its own.
      */
     val vadTimeout: Float = 1.2f,
+    /**
+     * Keep the wake-word engine running on battery. Default false: the
+     * wake-word inference (always-on CPU) only runs while the panel is on
+     * the charging dock, unless explicitly enabled here.
+     */
+    val voiceOnBattery: Boolean = false,
 )
 
 private val DEFAULT = MicrophoneSettings()
@@ -90,6 +96,12 @@ interface MicrophoneSettingsStore : SettingsStore<MicrophoneSettings> {
         get() = setting(
             get = { customWakeWordLocation },
             set = { copy(customWakeWordLocation = it) })
+
+    /**
+     * Keep the wake-word engine running while off the dock (power hungry).
+     */
+    val voiceOnBattery: SettingState<Boolean>
+        get() = setting(get = { voiceOnBattery }, set = { copy(voiceOnBattery = it) })
 
     /**
      * The muted state of the microphone.

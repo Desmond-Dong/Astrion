@@ -58,6 +58,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.launchIn
@@ -91,7 +92,8 @@ class DeviceBuilder @Inject constructor(
     private val activityNavigator: ActivityNavigator,
     private val haStatesStore: HomeAssistantStatesStore,
     private val haActionBus: HaActionBus,
-    private val eventHub: com.example.astrion.panel.PanelEventHub
+    private val eventHub: com.example.astrion.panel.PanelEventHub,
+    private val screensaverController: com.example.astrion.panel.ScreensaverController
 ) {
     suspend fun buildVoiceSatellite(coroutineContext: CoroutineContext): EspHomeDevice {
         val satelliteSettings = satelliteSettingsStore.get()
@@ -124,6 +126,10 @@ class DeviceBuilder @Inject constructor(
                 coroutineContext = coroutineContext,
                 voiceInput = microphoneSettingsStore.toVoiceInput(wakeWordDetector),
                 voiceOutput = voiceOutput,
+                voiceEnabled = combine(
+                    screensaverController.charging,
+                    microphoneSettingsStore.voiceOnBattery
+                ) { charging, onBattery -> charging || onBattery },
                 // Device-side end-of-speech (VAD): finish the audio stream
                 // locally when the user stops speaking instead of waiting for
                 // the server-side VAD, which never fires on some setups.
@@ -202,6 +208,14 @@ class DeviceBuilder @Inject constructor(
             scope = scope,
             onSelect = { displaySettingsStore.chargingDisplay.set(it) }
         )
+        // 省电开关：不充电（不在底座）时是否保持语音唤醒，默认关
+        entities += SwitchEntity(
+            key = keyAllocator.next(),
+            name = "Voice On Battery",
+            objectId = "voice_on_battery",
+            getState = microphoneSettingsStore.voiceOnBattery
+        ) { microphoneSettingsStore.voiceOnBattery.set(it) }
+
         entities += SelectEntity(
             key = keyAllocator.next(),
             name = "Wake Word",

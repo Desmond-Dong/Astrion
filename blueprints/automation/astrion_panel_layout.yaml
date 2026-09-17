@@ -137,89 +137,94 @@ triggers:
     event_type: entity_registry_updated
 
 variables:
-  light_entities: !input light_entities
-  switch_entities: !input switch_entities
-  climate_entities: !input climate_entities
-  cover_entities: !input cover_entities
-  fan_entities: !input fan_entities
-  media_entities: !input media_entities
-  remote_entities: !input remote_entities
-  scene_entities: !input scene_entities
-  script_entities: !input script_entities
-  weather_entities: !input weather_entities
-  humidifier_entities: !input humidifier_entities
-  water_heater_entities: !input water_heater_entities
-  valve_entities: !input valve_entities
-  vacuum_entities: !input vacuum_entities
   layout_entity: !input layout_entity
-  attribute_map:
-    climate:
-      - temperature
-      - current_temperature
-      - fan_mode
-      - preset_mode
-      - min_temp
-      - max_temp
-      - target_temp_low
-      - target_temp_high
-      - preset_modes
-      - fan_modes
-    light:
-      - brightness
-      - color_temp_kelvin
-      - min_color_temp_kelvin
-      - max_color_temp_kelvin
-      - effect_list
-      - supported_color_modes
-      - effect
-    fan:
-      - percentage
-    cover:
-      - current_position
-      - current_tilt_position
-    media_player:
-      - volume_level
-      - media_position
-      - media_duration
-      - media_title
-      - media_artist
-      - source
-      - source_list
-      - sound_mode
-      - sound_mode_list
-  all_entities: >-
-    {{ (light_entities or []) + (switch_entities or []) + (climate_entities or [])
-       + (cover_entities or []) + (fan_entities or []) + (media_entities or [])
-       + (remote_entities or []) + (scene_entities or []) + (script_entities or [])
-       + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
-       + (valve_entities or []) + (vacuum_entities or []) }}
-  layout_json: >-
-    {% set ns = namespace(by_area={}, sync=[]) %}
-    {% for e in all_entities %}
-      {% if state_attr(e, 'entity_category') not in ['config', 'diagnostic'] %}
-        {% set a = area_name(e) or '其他' %}
-        {% set ns.by_area = dict(ns.by_area, **{a: ns.by_area.get(a, []) + [e]}) %}
-        {% set ns.sync = ns.sync + [e] %}
-        {% for at in attribute_map.get(e.split('.')[0], []) %}
-          {% set ns.sync = ns.sync + [e ~ '.' ~ at] %}
-        {% endfor %}
-      {% endif %}
-    {% endfor %}
-    {% set ns.rooms = [] %}
-    {% for a in ns.by_area %}
-      {% set cards = namespace(items=[]) %}
-      {% for e in ns.by_area[a] %}
-        {% set cards.items = cards.items + [{'name': states[e].name if e in states else e, 'entities': [{'entity_id': e}]}] %}
-      {% endfor %}
-      {% set ns.rooms = ns.rooms + [{'title': a, 'cards': cards.items}] %}
-    {% endfor %}
-    {{ {'rooms': ns.rooms, 'sync_entities': ns.sync} | to_json }}
 
 actions:
-  - action: text.set_value
-    target:
-      entity_id: "{{ layout_entity }}"
-    data:
-      value: "{{ layout_json }}"
+  # 勾选的设备清单与布局 JSON 必须在动作序列里逐步求值：
+  # 自动化顶层 variables 是整体渲染，同层变量互相不可见。
+  - variables:
+      light_entities: !input light_entities
+      switch_entities: !input switch_entities
+      climate_entities: !input climate_entities
+      cover_entities: !input cover_entities
+      fan_entities: !input fan_entities
+      media_entities: !input media_entities
+      remote_entities: !input remote_entities
+      scene_entities: !input scene_entities
+      script_entities: !input script_entities
+      weather_entities: !input weather_entities
+      humidifier_entities: !input humidifier_entities
+      water_heater_entities: !input water_heater_entities
+      valve_entities: !input valve_entities
+      vacuum_entities: !input vacuum_entities
+      attribute_map:
+        climate:
+          - temperature
+          - current_temperature
+          - fan_mode
+          - preset_mode
+          - min_temp
+          - max_temp
+          - target_temp_low
+          - target_temp_high
+          - preset_modes
+          - fan_modes
+        light:
+          - brightness
+          - color_temp_kelvin
+          - min_color_temp_kelvin
+          - max_color_temp_kelvin
+          - effect_list
+          - supported_color_modes
+          - effect
+        fan:
+          - percentage
+        cover:
+          - current_position
+          - current_tilt_position
+        media_player:
+          - volume_level
+          - media_position
+          - media_duration
+          - media_title
+          - media_artist
+          - source
+          - source_list
+          - sound_mode
+          - sound_mode_list
+      all_entities: >-
+        {{ (light_entities or []) + (switch_entities or []) + (climate_entities or [])
+           + (cover_entities or []) + (fan_entities or []) + (media_entities or [])
+           + (remote_entities or []) + (scene_entities or []) + (script_entities or [])
+           + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
+           + (valve_entities or []) + (vacuum_entities or []) }}
+      layout_json: >-
+        {% set ns = namespace(by_area={}, sync=[]) %}
+        {% for e in all_entities %}
+          {% if state_attr(e, 'entity_category') not in ['config', 'diagnostic'] %}
+            {% set a = (area_name(area_id(e)) if area_id(e) else none) or '其他' %}
+            {% set ns.by_area = dict(ns.by_area, **{a: ns.by_area.get(a, []) + [e]}) %}
+            {% set ns.sync = ns.sync + [e] %}
+            {% for at in attribute_map.get(e.split('.')[0], []) %}
+              {% set ns.sync = ns.sync + [e ~ '.' ~ at] %}
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+        {% set ns.rooms = [] %}
+        {% for a in ns.by_area %}
+          {% set cards = namespace(items=[]) %}
+          {% for e in ns.by_area[a] %}
+            {% set cards.items = cards.items + [{'name': states[e].name if e in states else e, 'entities': [{'entity_id': e}]}] %}
+          {% endfor %}
+          {% set ns.rooms = ns.rooms + [{'title': a, 'cards': cards.items}] %}
+        {% endfor %}
+        {{ {'rooms': ns.rooms, 'sync_entities': ns.sync} | to_json }}
+  - if: "{{ all_entities | count > 0 }}"
+    then:
+      - action: text.set_value
+        target:
+          entity_id: "{{ layout_entity }}"
+        data:
+          value: "{{ layout_json }}"
 
 mode: single
