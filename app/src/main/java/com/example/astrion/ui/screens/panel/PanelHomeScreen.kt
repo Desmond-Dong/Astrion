@@ -64,6 +64,7 @@ import com.example.astrion.services.ActivityNavigator
 import com.example.astrion.services.HomeAssistantStatesStore
 import com.example.astrion.services.SatelliteStateHolder
 import com.example.astrion.ui.DeviceDetail
+import com.example.astrion.ui.ShortcutKeysRoute
 import com.example.astrion.ui.theme.RemoteBackground
 import com.example.astrion.ui.theme.RemoteColors
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -287,6 +288,7 @@ fun PanelHomeScreen(
                 raiseToWake = raiseToWake,
                 onRaiseToWakeChanged = { viewModel.setRaiseToWake(it) },
                 onRefreshDevices = { viewModel.refreshDevices() },
+                onOpenShortcutKeys = { navController.navigate(ShortcutKeysRoute) },
                 onOpenSettings = {
                     context.startActivity(
                         android.content.Intent(android.provider.Settings.ACTION_SETTINGS)

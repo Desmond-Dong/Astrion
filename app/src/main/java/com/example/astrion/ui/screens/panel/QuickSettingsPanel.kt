@@ -56,6 +56,7 @@ fun QuickSettingsPanel(
     raiseToWake: Boolean,
     onRaiseToWakeChanged: (Boolean) -> Unit,
     onRefreshDevices: () -> Unit,
+    onOpenShortcutKeys: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -167,6 +168,20 @@ fun QuickSettingsPanel(
                 Text("抬手唤醒", color = RemoteColors.onSurface, fontSize = 14.sp)
                 Spacer(Modifier.weight(1f))
                 Switch(checked = raiseToWake, onCheckedChange = onRaiseToWakeChanged)
+            }
+            Spacer(Modifier.height(6.dp))
+
+            // 快捷键绑定（原版 rlShortcutKey → ShortcutKeyActivity）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenShortcutKeys)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("快捷键绑定", color = RemoteColors.onSurface, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                Text("F4–F11 一键直达", color = RemoteColors.accent, fontSize = 13.sp)
             }
             Spacer(Modifier.height(6.dp))
 

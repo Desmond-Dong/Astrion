@@ -74,7 +74,8 @@ class MainActivity : ComponentActivity() {
                 PanelNavHost(
                     openCard = panelUiEvents.openCard,
                     navigateBack = panelUiEvents.navigateBack,
-                    goHome = panelUiEvents.goHome
+                    goHome = panelUiEvents.goHome,
+                    openShortcutBind = panelUiEvents.openShortcutBind
                 )
                 val deviceState by satelliteStateHolder.deviceState.collectAsState()
                 ScreensaverHost(

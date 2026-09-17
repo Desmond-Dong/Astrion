@@ -97,7 +97,8 @@ class KeyRouter @Inject constructor(
 /**
  * Executes the HA-configured key bindings (original 快捷键 system, now pushed
  * through the `astrion_key_bindings` text entity instead of the on-device
- * binding UI).
+ * binding UI). 解析顺序（原版 ShortcutKeyEventHandler）：
+ * HA 推送绑定 → 可绑定键长按进绑定页 → 面板本地绑定（一键快速进入）→ 内置默认。
  */
 @Singleton
 class KeyBindingExecutor @Inject constructor(
@@ -107,24 +108,44 @@ class KeyBindingExecutor @Inject constructor(
     private val panelUiEvents: PanelUiEvents,
     private val satelliteStateHolder: SatelliteStateHolder,
     private val haStatesStore: com.example.astrion.services.HomeAssistantStatesStore,
+    private val shortcutBindingStore: ShortcutBindingStore,
 ) {
     /** @return true when a binding matched and was executed. */
     suspend fun handle(press: KeyPress): Boolean {
         if (press.cancel) return false
+        // 1. HA 推送的绑定最优先（短/长按精确匹配）
         val configured = panelConfigStore.keyBindings.first().bindings
-        // Out-of-the-box defaults mirror the original model key table (§4.1
-        // HA100A F4-F11): dedicated keys open the first matching card, the mic
-        // key starts a hands-free conversation. Any pushed binding overrides
-        // the defaults entirely.
-        val bindings = configured.ifEmpty { defaultBindings() }
-        val binding = bindings
-            .firstOrNull { it.keycode == press.keyCode && it.longPress == press.longPress }
-            ?: return false
-        Timber.d("Key binding fired: keyCode=${press.keyCode} long=${press.longPress} action=${binding.action}")
+        configured.firstOrNull { it.keycode == press.keyCode && it.longPress == press.longPress }
+            ?.let { return execute(it) }
+        // 2. 原版 HA100：长按可绑定键（F4–F11）直接打开该键的绑定页；
+        //    设备页消费掉的键不会走到这里。
+        if (press.longPress && ShortcutBindingStore.isBindableKey(press.keyCode)) {
+            Timber.d("长按可绑定键 ${press.keyCode}，打开绑定页")
+            panelUiEvents.tryOpenKeyBinding(press.keyCode)
+            return true
+        }
+        // 3. 面板本地绑定（设备上一键快速进入）
+        shortcutBindingStore.get(press.keyCode)?.let { return executeLocal(it) }
+        // 4. 内置默认：F4–F11 打开第一张匹配卡片；仍无 → 未绑定短按进绑定页
+        val defaults = defaultBindings()
+        val default = defaults.firstOrNull {
+            it.keycode == press.keyCode && it.longPress == press.longPress
+        }
+        if (default != null) return execute(default)
+        if (ShortcutBindingStore.isBindableKey(press.keyCode)) {
+            panelUiEvents.tryOpenKeyBinding(press.keyCode)
+            return true
+        }
+        return false
+    }
+
+    private suspend fun execute(binding: KeyBinding): Boolean {
+        Timber.d("Key binding fired: keycode=${binding.keycode} long=${binding.longPress} action=${binding.action}")
         when (binding.action) {
             KeyBindingActions.ROOM -> activityNavigator.setPage(binding.target)
             KeyBindingActions.HOME -> {
-                val firstRoom = panelConfigStore.effectiveLayout.first().rooms
+                val firstRoom = panelConfigStore.effectiveLayout.first()
+                    .rooms
                     .firstOrNull()?.title.orEmpty()
                 activityNavigator.setPage(firstRoom)
             }
@@ -158,6 +179,50 @@ class KeyBindingExecutor @Inject constructor(
                 Timber.w("Unknown key binding action: ${binding.action}")
                 return false
             }
+        }
+        return true
+    }
+
+    /**
+     * 执行面板本地绑定（原版 processBinding）：开关/灯/风扇 → 按当前状态切换；
+     * 场景/脚本 → 执行；其余设备类型 → 打开设备详情页（一键快速进入）；
+     * 房间 → 跳房间页。
+     */
+    private suspend fun executeLocal(binding: ShortcutBinding): Boolean {
+        if (binding.type == "DeviceRoom") {
+            activityNavigator.setPage(binding.uuid)
+            return true
+        }
+        val card = panelConfigStore.effectiveLayout.first()
+            .rooms
+            .flatMap { it.cards }
+            .firstOrNull { it.cardId == binding.uuid }
+            ?: run {
+                Timber.w("快捷键绑定的卡片不存在: ${binding.uuid}")
+                return false
+            }
+        val entityId = card.primaryEntity?.entityId
+        when (card.resolvedType) {
+            PanelCardTypes.SCENE -> {
+                if (entityId != null) {
+                    haActionBus.callService(
+                        if (entityId.startsWith("script.")) "script.turn_on" else "scene.turn_on",
+                        mapOf("entity_id" to entityId)
+                    )
+                }
+            }
+
+            PanelCardTypes.SWITCH, PanelCardTypes.LIGHT, PanelCardTypes.FAN -> {
+                if (entityId != null) {
+                    val domain = entityId.substringBefore('.')
+                    haActionBus.callService(
+                        defaultToggleService(entityId, domain),
+                        mapOf("entity_id" to entityId)
+                    )
+                }
+            }
+
+            else -> panelUiEvents.tryOpenCard(card.cardId)
         }
         return true
     }
@@ -223,6 +288,18 @@ class PanelUiEvents @Inject constructor() {
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val goHome: SharedFlow<Unit> = _goHome.asSharedFlow()
+
+    // 原版长按/未绑定短按 → ShortCutKeyBindActivity：进入指定键的绑定页
+    private val _openShortcutBind = MutableSharedFlow<Int>(
+        replay = 0,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val openShortcutBind: SharedFlow<Int> = _openShortcutBind.asSharedFlow()
+
+    fun tryOpenKeyBinding(keyCode: Int) {
+        _openShortcutBind.tryEmit(keyCode)
+    }
 
     fun tryOpenCard(cardId: String) {
         _openCard.tryEmit(cardId)

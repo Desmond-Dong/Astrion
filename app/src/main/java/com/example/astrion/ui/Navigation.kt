@@ -11,6 +11,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.astrion.ui.screens.panel.DeviceDetailScreen
 import com.example.astrion.ui.screens.panel.PanelHomeScreen
+import com.example.astrion.ui.screens.panel.ShortcutBindScreen
+import com.example.astrion.ui.screens.panel.ShortcutKeysScreen
 import com.example.astrion.ui.theme.RemoteBackground
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.Serializable
@@ -22,11 +24,20 @@ object Home
 @Serializable
 data class DeviceDetail(val cardId: String)
 
+/** 快捷键列表（原版 ShortcutKeyActivity）。 */
+@Serializable
+object ShortcutKeysRoute
+
+/** 指定按键的绑定页（原版 ShortCutKeyBindActivity）。 */
+@Serializable
+data class ShortcutBindRoute(val keyCode: Int)
+
 @Composable
 fun PanelNavHost(
     openCard: SharedFlow<String>,
     navigateBack: SharedFlow<Unit>,
     goHome: SharedFlow<Unit>,
+    openShortcutBind: SharedFlow<Int>,
 ) {
     val navController = rememberNavController()
 
@@ -45,6 +56,12 @@ fun PanelNavHost(
             navController.popBackStack(Home, inclusive = false)
         }
     }
+    // 原版长按/未绑定短按 → 直接进入该键的绑定页
+    LaunchedEffect(navController) {
+        openShortcutBind.collect { keyCode ->
+            navController.navigate(ShortcutBindRoute(keyCode))
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -61,6 +78,16 @@ fun PanelNavHost(
             DeviceDetailScreen(
                 navController = navController,
                 cardId = route.cardId
+            )
+        }
+        composable<ShortcutKeysRoute> {
+            ShortcutKeysScreen(navController)
+        }
+        composable<ShortcutBindRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<ShortcutBindRoute>()
+            ShortcutBindScreen(
+                navController = navController,
+                keyCode = route.keyCode
             )
         }
     }
