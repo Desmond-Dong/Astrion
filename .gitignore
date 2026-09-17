@@ -24,3 +24,6 @@ local.properties
 .idea/markdown.xml
 .idea/runConfigurations.xml
 .idea/studiobot.xml
+
+## Ignore the local requirements notes
+/docs/HaRemote_Astrion_需求梳理_v1.md

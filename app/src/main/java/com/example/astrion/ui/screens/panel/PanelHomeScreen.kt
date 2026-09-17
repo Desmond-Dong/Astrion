@@ -1,6 +1,11 @@
 package com.example.astrion.ui.screens.panel
 
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,13 +19,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BorderStroke
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -28,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,9 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,10 +67,14 @@ import com.example.astrion.ui.DeviceDetail
 import com.example.astrion.ui.theme.RemoteBackground
 import com.example.astrion.ui.theme.RemoteColors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
@@ -101,7 +111,7 @@ class PanelViewModel @Inject constructor(
     }
 }
 
-/** Per-type accent pair for the icon gradient (原版彩色设备图标风格). */
+/** Per-type accent pair for the icon gradient (reserved for editor previews). */
 fun cardAccent(type: String): List<Color> = when (type) {
     PanelCardTypes.TV -> listOf(Color(0xFF2F6BFF), Color(0xFF69B6FF))
     PanelCardTypes.LIGHT -> listOf(Color(0xFFFF9F2E), Color(0xFFFFD75E))
@@ -185,6 +195,8 @@ fun translateOnOff(state: String): String = when (state) {
     else -> state
 }
 
+// ── Home ────────────────────────────────────────────────────────────────
+
 @Composable
 fun PanelHomeScreen(
     navController: NavController,
@@ -213,6 +225,7 @@ fun PanelHomeScreen(
         }
     }
 
+    val connected = deviceState == Connected
     var quickSettingsOpen by remember { mutableStateOf(false) }
 
     Box(
@@ -222,43 +235,53 @@ fun PanelHomeScreen(
             .topEdgeSwipeToOpen(enabled = !quickSettingsOpen) { quickSettingsOpen = true }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            RoomTopBar(
+            StatusBar(connected = connected)
+            if (!connected) WifiHintRow()
+            RoomSelectorBar(
                 roomTitle = rooms.getOrNull(pagerState.currentPage)?.title,
                 roomTitles = rooms.map { it.title },
-                connected = deviceState == Connected,
-                onSelectRoom = { title ->
-                    viewModel.selectRoom(title)
-                }
+                onSelectRoom = { viewModel.selectRoom(it) }
             )
 
             if (rooms.isEmpty()) {
-                EmptyLayoutHint()
+                EmptyLayoutHint(onRefresh = { viewModel.refreshDevices() })
             } else {
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.weight(1f)
                 ) { page ->
                     val room = rooms.getOrNull(page)
-                    RoomCardsGrid(
+                    RoomDeviceList(
                         cards = room?.cards ?: emptyList(),
                         haStates = haStates,
-                        onOpenCard = { card ->
-                            navController.navigate(DeviceDetail(card.cardId))
-                        }
+                        onOpenCard = { card -> navController.navigate(DeviceDetail(card.cardId)) }
                     )
                 }
                 PageDotsIndicator(
                     pageCount = rooms.size,
                     currentPage = pagerState.currentPage,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 60.dp)
                 )
             }
+        }
+
+        if (rooms.isNotEmpty()) {
+            BottomActionBar(
+                connected = connected,
+                onAdd = { quickSettingsOpen = true },
+                onRefresh = { viewModel.refreshDevices() },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 10.dp)
+            )
         }
 
         // 快捷面板画在内容之上，触摸不会被首页拦截
         if (quickSettingsOpen) {
             QuickSettingsPanel(
-                connected = deviceState == Connected,
+                connected = connected,
                 micMuted = micMuted,
                 onMicMutedChanged = { viewModel.setMicMuted(it) },
                 raiseToWake = raiseToWake,
@@ -275,88 +298,192 @@ fun PanelHomeScreen(
     }
 }
 
+/** 原生顶部状态条：左侧 HA 连接状态、中间大号时间、右侧电量。 */
 @Composable
-private fun RoomTopBar(
-    roomTitle: String?,
-    roomTitles: List<String>,
-    connected: Boolean,
-    onSelectRoom: (String) -> Unit,
-) {
-    var menuOpen by remember { mutableStateOf(false) }
+private fun StatusBar(connected: Boolean) {
+    val time = remember { mutableStateOf("") }
+    val date = remember { mutableStateOf("") }
+    val battery = rememberBatteryLevel()
+    LaunchedEffect(Unit) {
+        val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val dateFmt = SimpleDateFormat("M月d日", Locale.getDefault())
+        while (true) {
+            val now = Date()
+            time.value = timeFmt.format(now)
+            date.value = dateFmt.format(now)
+            delay(30_000)
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .clickable(enabled = roomTitles.size > 1) { menuOpen = true },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = roomTitle ?: "Astrion",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = RemoteColors.onSurface
-            )
-            if (roomTitles.size > 1) {
-                Spacer(Modifier.width(6.dp))
-                Text(text = "▾", color = RemoteColors.onSurfaceVariant, fontSize = 16.sp)
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                roomTitles.forEach { title ->
-                    DropdownMenuItem(
-                        text = { Text(title) },
-                        onClick = {
-                            menuOpen = false
-                            onSelectRoom(title)
-                        }
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.weight(1f))
-        // HA connection indicator (original icon_ha_no_connect)
         Box(
             modifier = Modifier
-                .size(10.dp)
+                .size(9.dp)
                 .background(
                     color = if (connected) RemoteColors.secondary else RemoteColors.error,
                     shape = CircleShape
                 )
         )
+        Spacer(Modifier.width(8.dp))
+        Text(text = "HA", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
+        Spacer(Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = time.value,
+                color = RemoteColors.topBarText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(text = date.value, color = RemoteColors.hintText, fontSize = 11.sp)
+        }
+        Spacer(Modifier.weight(1f))
+        if (battery != null) {
+            Text(text = "$battery%", color = RemoteColors.topBarText, fontSize = 13.sp)
+            Spacer(Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .size(width = 15.dp, height = 8.dp)
+                    .border(1.dp, RemoteColors.topBarText, RoundedCornerShape(2.dp)),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth((battery.toFloat() / 100f).coerceIn(0f, 1f))
+                        .padding(horizontal = 1.dp)
+                        .background(RemoteColors.topBarText)
+                        .height(4.dp)
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun RoomCardsGrid(
+private fun rememberBatteryLevel(): Int? {
+    val context = LocalContext.current
+    val level = remember { mutableStateOf<Int?>(null) }
+    DisposableEffect(Unit) {
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context, intent: Intent) {
+                val l = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                if (l >= 0) level.value = l
+            }
+        }
+        context.registerReceiver(receiver, filter)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return level.value
+}
+
+/** 原生顶部下拉提示：未连接时的红色提醒 + 金色补充说明。 */
+@Composable
+private fun WifiHintRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = "请连接 WiFi", color = RemoteColors.error, fontSize = 17.sp)
+        Spacer(Modifier.width(10.dp))
+        Text(text = "当前未连接", color = RemoteColors.wifiHint, fontSize = 16.sp)
+    }
+}
+
+/** 原生居中房间选择条 + 深色下拉。 */
+@Composable
+private fun RoomSelectorBar(
+    roomTitle: String?,
+    roomTitles: List<String>,
+    onSelectRoom: (String) -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(38.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            modifier = Modifier.clickable(enabled = roomTitles.size > 1) { menuOpen = true },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = roomTitle ?: "Astrion",
+                color = RemoteColors.roomName,
+                fontSize = 23.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (roomTitles.size > 1) {
+                Spacer(Modifier.width(8.dp))
+                Text(text = "▾", color = RemoteColors.onSurfaceVariant, fontSize = 16.sp)
+            }
+        }
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+            containerColor = RemoteColors.popupBackground
+        ) {
+            roomTitles.forEachIndexed { index, title ->
+                DropdownMenuItem(
+                    text = { Text(title, color = RemoteColors.roomName, fontSize = 16.sp) },
+                    onClick = {
+                        menuOpen = false
+                        onSelectRoom(title)
+                    }
+                )
+                if (index < roomTitles.size - 1) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp)
+                            .height(1.dp)
+                            .background(RemoteColors.popupLine)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 原生设备列表：一列设备行，开机时整行变暖褐底 + 底部绿色指示线。 */
+@Composable
+private fun RoomDeviceList(
     cards: List<PanelCard>,
     haStates: Map<String, com.example.astrion.services.HaEntityState>,
     onOpenCard: (PanelCard) -> Unit,
 ) {
-    // 容错: duplicate keys would crash the grid - keep the first of any dupes
+    // 容错: duplicate keys would crash the list - keep the first of any dupes
     val uniqueCards = remember(cards) { cards.distinctBy { it.cardId } }
     if (cards.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "此房间还没有设备\n\n请在 Home Assistant 的\n\"Panel Layout\" 实体中配置",
-                textAlign = TextAlign.Center,
-                color = RemoteColors.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_panel_host),
+                    contentDescription = null,
+                    tint = Color(0xFF3A3A3C),
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(text = "此房间暂无设备", color = RemoteColors.hintText, fontSize = 15.sp)
+            }
         }
         return
     }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    LazyColumn(
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         items(uniqueCards, key = { it.cardId }) { card ->
-            DeviceCard(
+            DeviceRow(
                 card = card,
                 name = card.displayName(haStates),
                 stateText = cardStateText(card, haStates),
@@ -367,74 +494,84 @@ private fun RoomCardsGrid(
 }
 
 @Composable
-private fun DeviceCard(
+private fun DeviceRow(
     card: PanelCard,
     name: String,
     stateText: String,
     onClick: () -> Unit,
 ) {
-    val accent = cardAccent(card.resolvedType)
     val isOn = stateText.contains("开启") || stateText.contains("打开") ||
         stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
+    val isOffline = stateText.contains("不可用") || stateText.contains("unavailable")
+    val bg = if (isOn) RemoteColors.deviceOn else Color.Transparent
 
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = RemoteColors.surface,
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(132.dp)
+            .height(150.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
             .clickable(onClick = onClick)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .background(
-                        Brush.linearGradient(accent),
-                        RoundedCornerShape(16.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(cardIconRes(card.resolvedType)),
-                    contentDescription = card.resolvedType,
-                    tint = Color.White,
-                    modifier = Modifier.size(30.dp)
-                )
-            }
-            Column {
+            Icon(
+                painter = painterResource(cardIconRes(card.resolvedType)),
+                contentDescription = card.resolvedType,
+                tint = Color(0xFFE6E6E6).copy(alpha = 0.85f),
+                modifier = Modifier.size(46.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = name,
+                color = RemoteColors.onSurfaceVariant,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (isOffline) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(RemoteColors.error, CircleShape)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(text = "离线", color = RemoteColors.error, fontSize = 13.sp)
+                }
+            } else if (stateText.isNotBlank() && stateText != "关闭") {
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    text = name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = RemoteColors.onSurface,
+                    text = stateText,
+                    color = RemoteColors.hintText,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+            if (card.resolvedType == PanelCardTypes.LIGHT ||
+                card.resolvedType == PanelCardTypes.CLIMATE
+            ) {
+                Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (stateText.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(
-                                    color = if (isOn) RemoteColors.secondary else RemoteColors.outline,
-                                    shape = CircleShape
-                                )
-                        )
-                        Spacer(Modifier.width(5.dp))
-                    }
-                    Text(
-                        text = stateText.ifBlank { " " },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = RemoteColors.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(text = "亮度", color = RemoteColors.hintText, fontSize = 12.sp)
+                    Spacer(Modifier.width(18.dp))
+                    Text(text = "色温", color = RemoteColors.hintText, fontSize = 12.sp)
                 }
             }
+        }
+        if (isOn) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(RemoteColors.secondary)
+            )
         }
     }
 }
@@ -447,16 +584,16 @@ private fun PageDotsIndicator(
 ) {
     if (pageCount <= 1) return
     Row(
-        modifier = modifier.padding(bottom = 12.dp),
+        modifier = modifier.padding(top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         repeat(pageCount) { index ->
             Box(
                 modifier = Modifier
-                    .size(if (index == currentPage) 8.dp else 6.dp)
+                    .size(if (index == currentPage) 9.dp else 6.dp)
                     .background(
-                        color = if (index == currentPage) RemoteColors.accent
-                        else RemoteColors.outline,
+                        color = if (index == currentPage) RemoteColors.onSurface
+                        else RemoteColors.dot,
                         shape = CircleShape
                     )
             )
@@ -464,29 +601,76 @@ private fun PageDotsIndicator(
     }
 }
 
+/** 原生底部操作条：未连接时重连，已连接时添加设备。 */
 @Composable
-private fun EmptyLayoutHint() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                painter = painterResource(R.drawable.ic_panel_host),
-                contentDescription = null,
-                tint = RemoteColors.outline,
-                modifier = Modifier.size(64.dp)
-            )
-            Spacer(Modifier.height(20.dp))
+private fun BottomActionBar(
+    connected: Boolean,
+    onAdd: () -> Unit,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val icon = if (connected) "+" else "↻"
+    val label = if (connected) "添加设备" else "重新连接"
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = RemoteColors.surfaceVariant,
+        border = BorderStroke(1.dp, RemoteColors.rowSeparator),
+        modifier = modifier.clickable { if (connected) onAdd() else onRefresh() }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = icon, color = RemoteColors.accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(8.dp))
+            Text(text = label, color = RemoteColors.accent, fontSize = 14.sp)
+        }
+    }
+}
+
+/** 原生空状态：大图标 + 金色标题 + 刷新按钮 + 底部二维码说明。 */
+@Composable
+private fun EmptyLayoutHint(onRefresh: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_panel_host),
+            contentDescription = null,
+            tint = Color(0xFF2A2A2C),
+            modifier = Modifier.size(110.dp)
+        )
+        Spacer(Modifier.height(18.dp))
+        Text(text = "暂无设备", color = RemoteColors.accent, fontSize = 22.sp)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "请先在 Home Assistant 中添加并采纳设备\n然后回到这里刷新",
+            textAlign = TextAlign.Center,
+            color = RemoteColors.wifiHint,
+            fontSize = 15.sp
+        )
+        Spacer(Modifier.height(26.dp))
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = RemoteColors.accent,
+            modifier = Modifier.clickable(onClick = onRefresh)
+        ) {
             Text(
-                text = "等待 Home Assistant 配置",
-                style = MaterialTheme.typography.titleMedium,
-                color = RemoteColors.onSurface
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "在 Home Assistant 中采纳此设备后，\n把布局 JSON 写入 \"Panel Layout\" 实体；\nIR 码库与按键绑定同样通过实体下发。",
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodyMedium,
-                color = RemoteColors.onSurfaceVariant
+                text = "刷新",
+                color = Color.White,
+                fontSize = 17.sp,
+                modifier = Modifier.padding(horizontal = 44.dp, vertical = 12.dp)
             )
         }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "支持扫码 [使用扫码查看说明]",
+            color = RemoteColors.onSurface,
+            fontSize = 13.sp
+        )
     }
 }
