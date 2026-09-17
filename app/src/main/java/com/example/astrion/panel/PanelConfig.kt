@@ -92,10 +92,16 @@ data class PanelLayout(
                         if (entityPart.isNotBlank() || roomPart.isNotBlank()) pages.add(roomPart.ifBlank { entityPart })
                         continue
                     }
-                    val cards = entityIds.mapIndexed { index, entityId ->
+                    val cards = entityIds.mapIndexed { index, token ->
+                        // 每个实体可带别名：`light.bed|床头灯`；行级 `| 别名`
+                        // 仍兼容（应用到该行第一张卡）。
+                        val entityId = token.substringBefore('|').trim()
+                        val alias = token.substringAfter('|', "").trim()
                         PanelCard(
-                            name = if (index == 0) cardName else "",
-                            entities = listOf(PanelEntityRef(entityId = entityId))
+                            name = alias.ifBlank { if (index == 0) cardName else "" },
+                            entities = listOf(
+                                PanelEntityRef(entityId = entityId, alias = alias)
+                            )
                         )
                     }
                     if (roomPart.isBlank() || roomPart == DEFAULT_ROOM_TITLE) {

@@ -121,8 +121,8 @@ blueprint:
             - domain: vacuum
           multiple: true
     layout_part_entities:
-      name: 面板布局分片实体（Panel Layout 00–15）
-      description: 面板设备上的 Panel Layout 00 到 Panel Layout 15，按 00→15 顺序全部勾选
+      name: 面板布局分片实体（Panel Layout 00–07）
+      description: 面板设备上的 Panel Layout 00 到 Panel Layout 07，按 00→07 顺序全部勾选
       default: []
       selector:
         entity:
@@ -159,76 +159,36 @@ actions:
       water_heater_entities: !input water_heater_entities
       valve_entities: !input valve_entities
       vacuum_entities: !input vacuum_entities
-      attribute_map:
-        climate:
-          - temperature
-          - current_temperature
-          - fan_mode
-          - preset_mode
-          - min_temp
-          - max_temp
-          - target_temp_low
-          - target_temp_high
-          - preset_modes
-          - fan_modes
-        light:
-          - brightness
-          - color_temp_kelvin
-          - min_color_temp_kelvin
-          - max_color_temp_kelvin
-          - effect_list
-          - supported_color_modes
-          - effect
-        fan:
-          - percentage
-        cover:
-          - current_position
-          - current_tilt_position
-        media_player:
-          - volume_level
-          - media_position
-          - media_duration
-          - media_title
-          - media_artist
-          - source
-          - source_list
-          - sound_mode
-          - sound_mode_list
       all_entities: >-
         {{ (light_entities or []) + (switch_entities or []) + (climate_entities or [])
            + (cover_entities or []) + (fan_entities or []) + (media_entities or [])
            + (remote_entities or []) + (scene_entities or []) + (script_entities or [])
            + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
            + (valve_entities or []) + (vacuum_entities or []) }}
-      layout_json: >-
-        {% set ns = namespace(by_area={}, sync=[]) %}
+      layout_text: >-
+        {% set ns = namespace(by_area={}) %}
         {% for e in all_entities %}
           {% if state_attr(e, 'entity_category') not in ['config', 'diagnostic'] %}
             {% set a = (area_name(area_id(e)) if area_id(e) else none) or '其他' %}
-            {% set ns.by_area = dict(ns.by_area, **{a: ns.by_area.get(a, []) + [e]}) %}
-            {% set ns.sync = ns.sync + [e] %}
-            {% for at in attribute_map.get(e.split('.')[0], []) %}
-              {% set ns.sync = ns.sync + [e ~ '.' ~ at] %}
-            {% endfor %}
+            {% set nm = (states[e].name if e in states else e)
+               | replace('|', '/') | replace('=', '＝')
+               | replace(',', '，') | replace(';', '；') %}
+            {% set ns.by_area = dict(ns.by_area, **{a: ns.by_area.get(a, []) + [e ~ '|' ~ nm]}) %}
           {% endif %}
         {% endfor %}
-        {% set ns.rooms = [] %}
+        {% set ns.rows = [] %}
         {% for a in ns.by_area %}
-          {% set cards = namespace(items=[]) %}
-          {% for e in ns.by_area[a] %}
-            {% set cards.items = cards.items + [{'name': states[e].name if e in states else e, 'entities': [{'entity_id': e}]}] %}
-          {% endfor %}
-          {% set ns.rooms = ns.rooms + [{'title': a, 'cards': cards.items}] %}
+          {% set ns.rows = ns.rows + [a ~ '=' ~ (ns.by_area[a] | join(', '))] %}
         {% endfor %}
-        {{ {'rooms': ns.rooms, 'sync_entities': ns.sync} | to_json }}
-  - if: "{{ all_entities | count > 0 and layout_part_entities | count == 16 }}"
+        {{ ns.rows | join('; ') }}
+  - if: "{{ all_entities | count > 0 and layout_part_entities | count == 8 }}"
     then:
       - repeat:
           for_each: "{{ layout_part_entities }}"
           sequence:
             - variables:
                 part_index: "{{ repeat.index - 1 }}"
-                part_value: "{{ layout_json[(part_index * 250):(part_index * 250 + 250)] }}"
+                part_value: "{{ layout_text[(part_index * 250):(part_index * 250 + 250)] }}"
             - action: text.set_value
               target:
                 entity_id: "{{ repeat.item }}"

@@ -74,7 +74,7 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /** 蓝图分片布局的分片数量与单片字符数（≤255，规避 HA 单条 text 上限）。 */
-private const val LAYOUT_PART_COUNT = 16
+private const val LAYOUT_PART_COUNT = 8
 private const val LAYOUT_PART_CHARS = 250
 private const val LAYOUT_ASSEMBLE_DELAY_MS = 1200L
 
