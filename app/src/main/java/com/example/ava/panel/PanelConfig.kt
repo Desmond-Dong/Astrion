@@ -78,7 +78,10 @@ data class PanelLayout(
                 var defaultRoom: PanelRoom? = null
                 val rooms = mutableListOf<PanelRoom>()
                 val pages = mutableListOf<String>()
-                for (rawLine in text.lines()) {
+                // HA text entities are single-line inputs, so ';' splits
+                // records just like a newline would.
+                for (rawLine in text.split('
+', ';')) {
                     val line = rawLine.trim()
                     if (line.isEmpty() || line.startsWith("#")) continue
                     val (roomPart, entityPart, cardName) = splitLine(line)
@@ -240,7 +243,8 @@ data class PanelKeyBindings(
             if (text.trimStart().startsWith("{")) return fromJson(text)
             return runCatching {
                 val bindings = mutableListOf<KeyBinding>()
-                for (rawLine in text.lines()) {
+                for (rawLine in text.split('
+', ';')) {
                     val line = rawLine.trim()
                     if (line.isEmpty() || line.startsWith("#") || !line.contains('=')) continue
                     val keyPart = line.substringBefore('=').trim().lowercase()
@@ -342,7 +346,8 @@ data class IrCodebook(
             if (text.trimStart().startsWith("{")) return fromJson(text)
             return runCatching {
                 val devices = mutableMapOf<String, MutableMap<String, String>>()
-                for (rawLine in text.lines()) {
+                for (rawLine in text.split('
+', ';')) {
                     val line = rawLine.trim()
                     if (line.isEmpty() || line.startsWith("#") || !line.contains('=')) continue
                     val device = line.substringBefore('|').trim()

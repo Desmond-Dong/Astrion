@@ -111,6 +111,18 @@ class PanelConfigJsonTest {
     }
 
     @Test
+    fun `semicolon separated single line layout parses like the multiline form`() {
+        val text = "客厅=remote.mi_tv, media_player.mi_tv; 卧室=light.bed, fan.bed"
+
+        val layout = PanelLayout.parseFlexible(text)
+
+        assertNotNull(layout)
+        assertEquals(2, layout.rooms.size)
+        assertEquals(2, layout.rooms[0].cards.size)
+        assertEquals(2, layout.rooms[1].cards.size)
+    }
+
+    @Test
     fun `bare entity list without room titles lands in the default room`() {
         val layout = PanelLayout.parseFlexible("light.ceiling, climate.ac")
 
@@ -190,6 +202,17 @@ class PanelConfigJsonTest {
     @Test
     fun `invalid key bindings json returns null`() {
         assertNull(PanelKeyBindings.fromJson("nope"))
+    }
+
+    @Test
+    fun `semicolon separated single line bindings parse`() {
+        val bindings = PanelKeyBindings.parseFlexible("132=home; 135=light.ceiling; 132_long=scene.film")
+
+        assertNotNull(bindings)
+        assertEquals(3, bindings.bindings.size)
+        assertEquals(KeyBindingActions.HOME, bindings.bindings[0].action)
+        assertEquals("light.ceiling", bindings.bindings[1].entityId)
+        assertTrue(bindings.bindings[2].longPress)
     }
 
     @Test

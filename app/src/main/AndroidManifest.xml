@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The panel is a dedicated always-on appliance; OEM battery/idle
+         managers must not stop its service. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- OTA self-update fallback (§8.6): on non-root devices the
          PackageInstaller session surfaces the system install prompt. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

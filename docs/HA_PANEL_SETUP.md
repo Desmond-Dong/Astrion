@@ -69,12 +69,14 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 
 ## 4. 面板布局 `astrion_layout`（推荐：一行一个房间，无需 JSON）
 
-**最简单写法**——一行一个房间，等号后逗号分隔实体 id，类型/图标/状态全部自动：
+**最简单写法**——`房间=实体1, 实体2`，多条记录用 **分号** 隔开（HA 的 text
+实体是单行输入框，分号就是"换行"），类型/图标/状态全部自动：
 
 ```
-客厅=remote.mi_tv, media_player.mi_tv | 电视
-卧室=light.bed, fan.bed
+客厅=remote.mi_tv, media_player.mi_tv | 电视; 卧室=light.bed, fan.bed
 ```
+
+多行粘贴同样支持：
 
 - `| 后面` 是该行唯一设备卡的显示别名（可省略）
 - 不带 `=` 的行表示"所有设备"房间：`light.ceiling, climate.ac`
@@ -198,20 +200,15 @@ Broadlink 迁移均可），面板按键时自动 `remote.send_command` → HA �
 
 ## 6. 物理按键绑定 `astrion_key_bindings`（推荐：一行一键，无需 JSON）
 
-**最简单写法**——一行一个按键，等号后直接填实体 id（场景/脚本/开关/灯都行，
-动作按域自动推断），或带前缀的特殊动作：
+**最简单写法**——`键码=目标`，多条记录用分号隔开（目标直接填实体 id，动作按域自动推断）：
 
 ```
-# 注释
-132=home                    # 回到首页
-135=light.ceiling           # 开/关这盏灯（按当前状态）
-136=scene.film              # 执行场景
-137=script.goodnight        # 运行脚本
-132_long=climate.ac         # 长按：开/关空调
-93=room:客厅                # 跳到房间
-94=card:tv1                 # 打开设备详情页
-96=voice                    # 免唤醒语音对话
+132=home; 135=light.ceiling; 136=scene.film; 132_long=climate.ac; 93=room:客厅; 96=voice
 ```
+
+- `键码_long=` 表示长按（800ms），不带后缀为短按
+- `home`/`voice`/`room:标题`/`card:卡片id` 是特殊动作；实体 id 则按域自动
+  推断（`scene`/`script` → 执行，`switch`/`light`/`fan` → 按当前状态开/关）
 
 - `键码_long=` 表示长按（800ms），不带后缀为短按
 - 实体 id 动作按域自动推断：`scene`/`script` → 执行；`button` → 按压；

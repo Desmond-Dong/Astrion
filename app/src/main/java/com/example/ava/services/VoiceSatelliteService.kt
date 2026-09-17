@@ -98,6 +98,25 @@ class VoiceSatelliteService() : LifecycleService() {
         raiseToWakeController.start(lifecycleScope)
     }
 
+    /**
+     * Re-asserts the foreground notification periodically so OEM app managers
+     * cannot demote the service while the panel sits idle.
+     */
+    private fun startForegroundWatchdog() = lifecycleScope.launch {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            runCatching {
+                startForeground(
+                    2,
+                    createVoiceSatelliteServiceNotification(
+                        this@VoiceSatelliteService,
+                        (_voiceSatellite.value?.voiceAssistant?.state ?: Stopped).translate(resources)
+                    )
+                )
+            }
+        }
+    }
+
     /** Mirrors the ESPHome device state for the always-on appliance UI. */
     private fun startDeviceStatePublisher() = _voiceSatellite
         .flatMapLatest { it?.state ?: emptyFlow() }
@@ -111,15 +130,25 @@ class VoiceSatelliteService() : LifecycleService() {
         return VoiceSatelliteBinder(this)
     }
 
-    @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Assert foreground synchronously on every start: some OEM app
+        // managers (DuraSpeed on this panel) stop "idle" services after
+        // ~90s, which would otherwise drop the Home Assistant connection.
+        startForeground(
+            2,
+            createVoiceSatelliteServiceNotification(
+                this,
+                (_voiceSatellite.value?.voiceAssistant?.state ?: Stopped).translate(resources)
+            )
+        )
         lifecycleScope.launch {
             // already started?
             if (_voiceSatellite.value == null) {
                 startSatellite()
             }
         }
-        return super.onStartCommand(intent, flags, startId)
+        // Stick around: the panel is a dedicated always-on appliance.
+        return START_STICKY
     }
 
     @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
