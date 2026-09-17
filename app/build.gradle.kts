@@ -9,11 +9,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.ava"
+    namespace = "com.example.astrion"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.ava"
+        applicationId = "com.example.astrion"
         minSdk = 26
         targetSdk = 36
         versionCode = if (project.ext.has("versionCode"))
