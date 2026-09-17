@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +63,7 @@ import com.example.ava.ui.theme.RemoteColors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -70,7 +72,7 @@ class PanelViewModel @Inject constructor(
     panelConfigStore: com.example.ava.panel.PanelConfigStore,
     haStatesStore: HomeAssistantStatesStore,
     private val activityNavigator: ActivityNavigator,
-    satelliteStateHolder: SatelliteStateHolder,
+    private val satelliteStateHolder: SatelliteStateHolder,
     private val microphoneSettingsStore: com.example.ava.settings.MicrophoneSettingsStore,
     private val displaySettingsStore: com.example.ava.settings.DisplaySettingsStore,
 ) : ViewModel() {
