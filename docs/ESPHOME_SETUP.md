@@ -6,10 +6,10 @@ Home Assistant 里通过 ESPHome 集成完成（布局、红外码库、按键�
 见 §6）——这是唯一存储在面板本地、不依赖 HA 推送的功能；删除应用数据后重新在设备上
 绑一次即可，HA 推送的其余配置重推一次就恢复。
 
-**两步上手**：① ESPHome 集成采纳设备 → ② 把红外码库 JSON 写入
-`text.astrion_ir_codes` 即可遥控。面板布局（`astrion_layout`）是可选的：不推送时
-面板直接按码库生成默认房间；推送时也只需要极简形态（卡片 `name` + `entity_id`，
-其余字段都有缺省值，见 §4）。
+**两步上手**：① ESPHome 集成采纳设备 → ② 把红外码库写进
+`text.astrion_ir_codes` 即可遥控（单行文本，无需 JSON）。面板布局（`astrion_layout`）
+是可选的：不推送时面板直接按码库生成默认房间；推送时也只需要极简行格式
+（卡片 `name` + `entity_id`，其余字段都有缺省值，见 §4）。
 
 ---
 
@@ -72,14 +72,17 @@ Home Assistant 里通过 ESPHome 集成完成（布局、红外码库、按键�
 
 ## 4. 面板布局 `astrion_layout`（推荐：一行一个房间，无需 JSON）
 
-**最简单写法**——`房间=实体1, 实体2`，多条记录用 **分号** 隔开（HA 的 text
-实体是单行输入框，分号就是"换行"），类型/图标/状态全部自动：
+> **先读这个**：text 实体是**单行**输入框，不能换行、没法手写多行 JSON。
+> 本文示例写成多行只是为了易读；**实际写入时把每条记录用 `;` 连成一行**。
+> 需要超长配置时用 §7 的 `input_text` + 自动化方案（服务调用下发单行字符串）。
+
+**最简单写法**——`房间=实体1, 实体2`，多条记录用 **分号** 隔开（分号就是"换行"），类型/图标/状态全部自动：
 
 ```
 客厅=remote.tv, media_player.tv | 电视; 卧室=light.bed, fan.bed
 ```
 
-多行粘贴同样支持：
+语法要点：
 
 - `| 后面` 是该行唯一设备卡的显示别名（可省略）
 - 不带 `=` 的行表示"所有设备"房间：`light.ceiling, climate.ac`
@@ -89,57 +92,16 @@ Home Assistant 里通过 ESPHome 集成完成（布局、红外码库、按键�
 
 写进 `astrion_layout` 文本实体即生效。**只推 `astrion_ir_codes` 也行**——布局为空时会用码库自动生成"所有设备"房间。
 
-### 完整 JSON 形态（高级，可选）
+### 完整 JSON 结构（仅供参考，必须单行下发）
 
-
-
-写入 JSON 即生效；面板 UI、导航 select 选项、HA 状态订阅清单都会随之重建。
+面板也接受完整 JSON（自定义 tv 卡按键、显式 `sync_entities` 等场景）。但
+**JSON 只能压成一行写入**，下面的多行排版只是字段参考：
 
 ```json
-{
-  "rooms": [
-    {
-      "title": "客厅",
-      "cards": [
-        {
-          "type": "tv",
-          "uuid": "tv1",
-          "name": "客厅电视",
-          "tv_type": "android_tv",
-          "entities": [
-            {"key": "POWER", "entity_id": "remote.tv", "value": "POWER"},
-            {"key": "VOLUME_UP", "entity_id": "media_player.tv"}
-          ]
-        },
-        {
-          "type": "light",
-          "name": "吸顶灯",
-          "uuid": "light1",
-          "entities": [{"entity_id": "light.ceiling", "alias": "主灯"}]
-        },
-        {
-          "type": "climate",
-          "name": "客厅空调",
-          "uuid": "ac1",
-          "entities": [{"entity_id": "climate.ac"}]
-        }
-      ]
-    },
-    { "title": "卧室", "cards": [] }
-  ],
-  "pages": ["全屋"],
-  "sync_entities": [
-    "light.ceiling",
-    "climate.ac",
-    "climate.ac.temperature",
-    "climate.ac.current_temperature",
-    "climate.ac.fan_mode",
-    "media_player.tv",
-    "media_player.tv.media_title",
-    "media_player.tv.media_artist"
-  ]
-}
+{"rooms": [{"title": "客厅", "cards": [{"type": "tv", "uuid": "tv1", "name": "客厅电视", "tv_type": "android_tv", "entities": [{"key": "POWER", "entity_id": "remote.tv", "value": "POWER"}, {"key": "VOLUME_UP", "entity_id": "media_player.tv"}]}, {"type": "light", "name": "吸顶灯", "uuid": "light1", "entities": [{"entity_id": "light.ceiling", "alias": "主灯"}]}, {"type": "climate", "name": "客厅空调", "uuid": "ac1", "entities": [{"entity_id": "climate.ac"}]}]}, {"title": "卧室", "cards": []}], "pages": ["全屋"], "sync_entities": ["light.ceiling", "climate.ac", "climate.ac.temperature", "climate.ac.current_temperature", "climate.ac.fan_mode", "media_player.tv", "media_player.tv.media_title", "media_player.tv.media_artist"]}
 ```
+
+字段含义见下；日常配置用上面的行格式就够了。
 
 ### 字段说明
 
@@ -195,8 +157,10 @@ Broadlink 迁移均可），面板按键时自动 `remote.send_command` → HA �
 机顶盒 | POWER=JgBMACHgERAQERAAHQAA
 ```
 
+（多行仅为易读：实际写入 text 实体时是**一行**，用 `;` 分隔。）
+
 码串支持三种格式（自动识别）：逗号时序、Broadlink base64、AES base64。
-设备名与布局里 tv 卡的 `name` 一致时按键本地直发。也兼容完整 JSON：
+设备名与布局里 tv 卡的 `name` 一致时按键本地直发。也兼容单行完整 JSON：
 `{"客厅电视": {"POWER": "...", "MUTE": "..."}}`。
 
 每个本地码库设备同时暴露一个 `infrared` 实体（原始时序直发）和逐键 `button`。
@@ -258,26 +222,20 @@ Broadlink 迁移均可），面板按键时自动 `remote.send_command` → HA �
 - `键码_long=` 表示长按（800ms），不带后缀为短按
 - `home`/`voice`/`room:标题`/`card:卡片id` 是特殊动作；实体 id 则按域自动推断：
   `scene`/`script` → 执行；`button` → 按压；`switch`/`light`/`fan` 等 → 按当前状态开/关切换
-- 也可用完整 JSON 形态：
+- 也可用完整 JSON（同样必须**单行**，多行排版仅为易读）：
 
 ```json
-{
-  "bindings": [
-    {"keycode": 132, "action": "room",  "target": "客厅"},
-    {"keycode": 135, "action": "card",  "target": "tv1"},
-    {"keycode": 135, "long_press": true, "action": "service",
-     "service": "scene.turn_on", "entity_id": "scene.film"}
-  ]
-}
+{"bindings": [{"keycode": 132, "action": "room", "target": "客厅"}, {"keycode": 135, "action": "card", "target": "tv1"}, {"keycode": 135, "long_press": true, "action": "service", "service": "scene.turn_on", "entity_id": "scene.film"}]}
 ```
 
 - `action`: `room`（target=房间标题）| `card`（target=卡片 uuid/cardId）|
   `service`（service + entity_id/data）| `home` | `voice`。
 - `keycode` 为 Android 键码；`long_press` 缺省 false（长按 800ms 阈值）。
 
-## 7. 配置下发自动化示例
+## 7. 配置下发自动化示例（长内容走这里）
 
-把布局放到 `input_text`（或模板 sensor）里，再自动同步到面板实体：
+text 实体输入框短且单行，**长配置/完整 JSON 建议放在 `input_text` 里，再用
+自动化同步**到面板实体（值必须是单行，多条记录用 `;` 分隔）：
 
 ```yaml
 # configuration.yaml
@@ -303,7 +261,7 @@ automation:
 
 配置写入后面板约 3 秒自动重建实体列表（IR 码库按键、导航选项），无需重启 App。
 
-> 注意：布局/码库/绑定是三份独立 JSON，建议各放一个 `input_text` 分别同步。
+> 注意：布局/码库/绑定是三份独立配置，建议各放一个 `input_text` 分别同步。
 
 ## 8. 面板 → Home Assistant 事件
 
