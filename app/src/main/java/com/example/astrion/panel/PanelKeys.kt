@@ -162,8 +162,29 @@ class KeyBindingExecutor @Inject constructor(
                         }
                     )
                 } else {
-                    // Plain entity id: default action by domain (§4.1 服务分派)
+                    // Plain entity id: default action by domain (§4.1 服务分派).
+                    // 原版专属键语义：窗帘/空调/媒体/电视 → 打开对应设备页。
                     val domain = binding.entityId.substringBefore('.')
+                    val pageType = when (domain) {
+                        "cover" -> PanelCardTypes.COVER
+                        "climate", "water_heater" -> PanelCardTypes.CLIMATE
+                        "media_player" -> PanelCardTypes.MEDIA_PLAYER
+                        "remote" -> PanelCardTypes.TV
+                        else -> null
+                    }
+                    if (pageType != null) {
+                        val card = panelConfigStore.effectiveLayout.first()
+                            .rooms
+                            .flatMap { it.cards }
+                            .firstOrNull {
+                                it.resolvedType == pageType &&
+                                    it.primaryEntity?.entityId == binding.entityId
+                            }
+                        if (card != null) {
+                            panelUiEvents.tryOpenCard(card.cardId)
+                            return true
+                        }
+                    }
                     val service = when (domain) {
                         "scene", "script" -> "${domain}.turn_on"
                         "button", "input_button" -> "${domain}.press"

@@ -29,7 +29,18 @@ data class DisplaySettings(
      * (default). Picking the panel up produces jerk spikes well above 4.
      */
     val raiseToWakeThreshold: Float = 0f,
-)
+    /**
+     * What the screen does while charging: "屏保" keeps the idle clock
+     * (default), "熄屏" blacks the display out (true sleep when the platform
+     * allows it, a black overlay otherwise).
+     */
+    val chargingDisplay: String = CHARGING_SCREENSAVER,
+) {
+    companion object {
+        const val CHARGING_SCREENSAVER = "屏保"
+        const val CHARGING_SCREEN_OFF = "熄屏"
+    }
+}
 
 private val DEFAULT = DisplaySettings()
 
@@ -63,4 +74,8 @@ interface DisplaySettingsStore : SettingsStore<DisplaySettings> {
      */
     val raiseToWakeThreshold: SettingState<Float>
         get() = setting(get = { raiseToWakeThreshold }, set = { copy(raiseToWakeThreshold = it) })
+
+    /** Charging display mode: [DisplaySettings.CHARGING_SCREENSAVER] or screen-off. */
+    val chargingDisplay: SettingState<String>
+        get() = setting(get = { chargingDisplay }, set = { copy(chargingDisplay = it) })
 }

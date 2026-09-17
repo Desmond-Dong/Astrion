@@ -249,12 +249,20 @@ fun ShortcutBindScreen(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = "${ShortcutBindingStore.keyDisplayName(keyCode)} 键绑定",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = RemoteColors.onSurface
-            )
+            Column {
+                Text(
+                    text = "${ShortcutBindingStore.keyDisplayName(keyCode)} 键绑定",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = RemoteColors.onSurface
+                )
+                Text(
+                    text = if (ShortcutBindingStore.isSceneKey(keyCode)) "绑定一台场景或脚本"
+                    else "绑定一台${ShortcutBindingStore.keyDeviceTabLabel(keyCode)}设备或一个房间",
+                    color = RemoteColors.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -394,7 +402,7 @@ private fun BindRow(
     onClick: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = if (selected) RemoteColors.accentContainer else RemoteColors.surfaceVariant,
         border = if (selected) BorderStroke(1.dp, RemoteColors.accent) else null,
         modifier = Modifier
@@ -402,33 +410,41 @@ private fun BindRow(
             .clickable(onClick = onClick)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                color = RemoteColors.onSurface,
-                fontSize = 15.sp,
-                modifier = Modifier.weight(1f),
-                maxLines = 1
-            )
-            Text(
-                text = subtitle,
-                color = RemoteColors.onSurfaceVariant,
-                fontSize = 12.sp,
-                modifier = Modifier.alpha(0.9f)
-            )
-            Spacer(Modifier.width(10.dp))
-            Box(
-                modifier = Modifier
-                    .width(18.dp)
-                    .height(18.dp)
-                    .background(
-                        color = if (selected) RemoteColors.accent else RemoteColors.key,
-                        shape = RoundedCornerShape(9.dp)
-                    )
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = RemoteColors.onSurface,
+                    fontSize = 16.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1
+                )
+                Text(
+                    text = subtitle,
+                    color = RemoteColors.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            if (selected) {
+                Text(
+                    text = "✓",
+                    color = RemoteColors.accent,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .background(RemoteColors.key, RoundedCornerShape(10.dp))
+                )
+            }
         }
+    }
+}
     }
 }
 

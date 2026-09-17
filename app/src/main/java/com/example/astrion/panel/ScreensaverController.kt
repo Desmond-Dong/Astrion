@@ -1,7 +1,11 @@
 package com.example.astrion.panel
 
+import android.content.Context
+import android.os.PowerManager
 import android.os.SystemClock
+import com.example.astrion.settings.DisplaySettings
 import com.example.astrion.settings.DisplaySettingsStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,19 +28,31 @@ import javax.inject.Singleton
  * battery, HA link) takes over, mirroring the original ScreenSaverDialog.
  * Any key or touch dismisses it.
  *
+ * While charging the user chooses the idle behaviour (§3.10.7 充电时常亮):
+ * keep the screensaver (default) or black the display out — true sleep when
+ * the platform permits, a pure-black overlay otherwise.
+ *
  * The controller outlives the activity so the idle clock keeps running across
  * recreation; the idle loop is started from [com.example.astrion.MainActivity].
  */
 @Singleton
 class ScreensaverController @Inject constructor(
+    @ApplicationContext context: Context,
     private val displaySettingsStore: DisplaySettingsStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val powerManager =
+        context.getSystemService(Context.POWER_SERVICE) as PowerManager
 
     private val _active = MutableStateFlow(false)
 
     /** True while the idle screensaver overlay should cover the UI. */
     val active: StateFlow<Boolean> = _active.asStateFlow()
+
+    private val _screenOff = MutableStateFlow(false)
+
+    /** True while the display should be blacked out (charging + 熄屏). */
+    val screenOff: StateFlow<Boolean> = _screenOff.asStateFlow()
 
     private val _chargingFlash = MutableStateFlow(false)
 
@@ -45,6 +61,12 @@ class ScreensaverController @Inject constructor(
 
     @Volatile
     private var timeoutSeconds = 0
+
+    @Volatile
+    private var chargingScreenOff = false
+
+    @Volatile
+    private var charging = false
 
     @Volatile
     private var lastInteractionRealtimeMs = SystemClock.elapsedRealtime()
@@ -62,6 +84,9 @@ class ScreensaverController @Inject constructor(
         displaySettingsStore.screenSaverTimeout
             .onEach { timeoutSeconds = it }
             .launchIn(scope)
+        displaySettingsStore.chargingDisplay
+            .onEach { chargingScreenOff = it == DisplaySettings.CHARGING_SCREEN_OFF }
+            .launchIn(scope)
         scope.launch {
             while (isActive) {
                 delay(IDLE_POLL_MS)
@@ -77,6 +102,16 @@ class ScreensaverController @Inject constructor(
             Timber.d("Screensaver dismissed by user activity")
             _active.value = false
         }
+        if (_screenOff.value) {
+            Timber.d("Charging screen-off dismissed by user activity")
+            _screenOff.value = false
+        }
+    }
+
+    /** Reports the current charging state (drives the 充电熄屏 behaviour). */
+    fun setCharging(value: Boolean) {
+        charging = value
+        if (!value && _screenOff.value) _screenOff.value = false
     }
 
     /** Shows the short charging hint (plugged in while running, §3.10.7). */
@@ -96,12 +131,31 @@ class ScreensaverController @Inject constructor(
             if (_active.value) _active.value = false
             return
         }
-        if (_active.value) return
+        if (_active.value || _screenOff.value) return
         val idleMs = SystemClock.elapsedRealtime() - lastInteractionRealtimeMs
         if (idleMs >= timeout * 1000L) {
-            Timber.d("Screensaver shown after ${idleMs}ms idle")
-            _active.value = true
+            if (charging && chargingScreenOff) {
+                Timber.d("Charging idle: turning screen off after ${idleMs}ms")
+                if (!tryGoToSleep()) _screenOff.value = true
+            } else {
+                Timber.d("Screensaver shown after ${idleMs}ms idle")
+                _active.value = true
+            }
         }
+    }
+
+    /**
+     * True platform sleep when the device has the (signature) DEVICE_POWER
+     * right; otherwise the caller falls back to the black overlay.
+     */
+    private fun tryGoToSleep(): Boolean = runCatching {
+        powerManager.javaClass
+            .getMethod("goToSleep", Long::class.javaPrimitiveType)
+            .invoke(powerManager, SystemClock.uptimeMillis())
+        true
+    }.getOrElse {
+        Timber.d("goToSleep unavailable, using black overlay")
+        false
     }
 
     private companion object {

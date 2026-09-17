@@ -176,6 +176,19 @@ class DeviceBuilder @Inject constructor(
         val stopWordOptions = micSettings.availableStopWords(context).map { it.id }
         entities += SelectEntity(
             key = keyAllocator.next(),
+            name = "Charging Display",
+            objectId = "charging_display",
+            // 充电时的空闲显示：保持屏保时钟，还是熄屏
+            options = listOf(
+                com.example.astrion.settings.DisplaySettings.CHARGING_SCREENSAVER,
+                com.example.astrion.settings.DisplaySettings.CHARGING_SCREEN_OFF
+            ),
+            externalState = displaySettingsStore.chargingDisplay,
+            scope = scope,
+            onSelect = { displaySettingsStore.chargingDisplay.set(it) }
+        )
+        entities += SelectEntity(
+            key = keyAllocator.next(),
             name = "Wake Word",
             objectId = "wake_word",
             options = wakeWordOptions,

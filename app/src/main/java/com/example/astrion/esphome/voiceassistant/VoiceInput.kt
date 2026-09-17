@@ -123,6 +123,10 @@ class VoiceInputImpl(
                     }
                 }
             }.onStart {
+                // 音频采集线程拉到最高优先级，降低唤醒检测与推流延迟
+                android.os.Process.setThreadPriority(
+                    android.os.Process.THREAD_PRIORITY_URGENT_AUDIO
+                )
                 microphone.start()
                 wakeWord.setWakeWords(wakeWords.values.toList() + stopWords.values.toList())
             }.onCompletion {

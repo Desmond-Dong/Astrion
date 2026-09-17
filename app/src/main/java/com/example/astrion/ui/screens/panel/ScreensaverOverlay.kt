@@ -45,6 +45,10 @@ import androidx.compose.ui.unit.sp
 import com.example.astrion.panel.ScreensaverController
 import com.example.astrion.ui.theme.RemoteColors
 import kotlinx.coroutines.delay
+import android.graphics.Typeface
+import android.util.TypedValue
+import android.widget.TextClock
+import androidx.compose.ui.viewinterop.AndroidView
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -73,8 +77,20 @@ fun ScreensaverHost(
     haConnected: Boolean,
 ) {
     val active by controller.active.collectAsState()
+    val screenOff by controller.screenOff.collectAsState()
     val chargingFlash by controller.chargingFlash.collectAsState()
     val battery = rememberPanelBatteryState(controller)
+    if (screenOff) {
+        // 充电熄屏：纯黑整屏（平台允许时已经是真熄屏），任意触摸/按键即退出
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures { }
+                }
+        )
+    }
     if (active) {
         ScreensaverOverlay(battery = battery.value, connected = haConnected)
     }
@@ -111,6 +127,7 @@ fun rememberPanelBatteryState(controller: ScreensaverController): State<PanelBat
                 if (!firstDelivery && charging && !previousCharging) {
                     controller.showChargingFlash()
                 }
+                controller.setCharging(charging)
                 previousCharging = charging
                 firstDelivery = false
             }
@@ -131,7 +148,8 @@ private fun ScreensaverOverlay(
     battery: PanelBatteryState,
     connected: Boolean,
 ) {
-    // Second tick so the clock stays current while visible.
+    // Second tick so the date stays current while visible (the clock itself
+    // is the system TextClock and refreshes on its own).
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -140,9 +158,6 @@ private fun ScreensaverOverlay(
         }
     }
     val locale = Locale.getDefault()
-    val timeText = remember(now, locale) {
-        SimpleDateFormat("HH:mm", locale).format(Date(now))
-    }
     val dateText = remember(now, locale) {
         val pattern = if (locale.language.equals("zh", ignoreCase = true)) {
             "M月d日 EEEE"
@@ -190,11 +205,17 @@ private fun ScreensaverOverlay(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = timeText,
-                color = RemoteColors.onSurface,
-                fontSize = 96.sp,
-                fontWeight = FontWeight.Light
+            // 系统时钟组件：自动跟随系统的 12/24 小时制与时间格式
+            AndroidView(
+                factory = { context ->
+                    TextClock(context).apply {
+                        format12Hour = null
+                        format24Hour = null
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 96f)
+                        setTextColor(0xFFF6F6F6.toInt())
+                        typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+                    }
+                }
             )
             Spacer(Modifier.height(12.dp))
             Text(

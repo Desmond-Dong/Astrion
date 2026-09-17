@@ -73,6 +73,23 @@ fun QuickSettingsPanel(
         modifier = Modifier
             .fillMaxSize()
             .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f))
+            // 上滑关闭（原版下拉面板的手势）；轻点空白处同样关闭
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var total = 0f
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        total += change.positionChange().y
+                        if (total < -140f) {
+                            onDismiss()
+                            break
+                        }
+                    }
+                }
+            }
             .clickable(onClick = onDismiss)
     ) {
         Column(
@@ -234,27 +251,36 @@ fun QuickSettingsPanel(
 
 /**
  * Opens the quick settings panel when the user swipes down from the top edge
- * of the screen (original drop-down entry gesture).
+ * of the screen (original drop-down entry gesture). The gesture is only
+ * claimed after it clearly becomes a downward drag from the edge, so normal
+ * content scrolling is never hijacked; as soon as the panel opens the rest of
+ * the touch is handed over to it (no dead first frame).
  */
 fun Modifier.topEdgeSwipeToOpen(enabled: Boolean = true, onOpen: () -> Unit): Modifier =
     pointerInput(enabled) {
         if (!enabled) return@pointerInput
-        val edgePx = 60.dp.toPx()
-        val threshold = 110.dp.toPx()
+        val edgePx = 80.dp.toPx()
+        val threshold = 90.dp.toPx()
+        val slop = viewConfiguration.touchSlop
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             if (down.position.y > edgePx) return@awaitEachGesture
             var total = 0f
-            var opened = false
+            var claimed = false
             while (true) {
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull() ?: break
                 if (!change.pressed) break
                 total += change.positionChange().y
-                change.consume()
-                if (total > threshold && !opened) {
-                    opened = true
-                    onOpen()
+                if (!claimed && total > slop) {
+                    claimed = true
+                }
+                if (claimed) {
+                    change.consume()
+                    if (total > threshold) {
+                        onOpen()
+                        break
+                    }
                 }
             }
         }

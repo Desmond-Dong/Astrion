@@ -23,6 +23,7 @@ const val DEFAULT_AUDIO_MODE = AudioManager.MODE_NORMAL
 const val DEFAULT_SAMPLE_RATE_IN_HZ = 16000
 const val DEFAULT_CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
 const val DEFAULT_AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+private const val BYTES_PER_SAMPLE = 2 // 16-bit PCM
 
 fun audioRecordMicrophoneFlow(
     audioManager: AudioManager,
@@ -63,8 +64,13 @@ class AudioRecordMicrophone(
     val channelConfig: Int = DEFAULT_CHANNEL_CONFIG,
     val audioFormat: Int = DEFAULT_AUDIO_FORMAT
 ) : Microphone {
-    private val bufferSize =
-        AudioRecord.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat)
+    // 40ms 分帧读取：唤醒检测与推流的最大延迟从整块缓冲降到 40ms，
+    // 这是"喊了半天才有反应"的主要来源（原版同样按小帧喂模型）。
+    private val readChunkBytes = sampleRateInHz * BYTES_PER_SAMPLE / 25
+    private val bufferSize = maxOf(
+        AudioRecord.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat),
+        readChunkBytes * 2
+    )
     private val buffer = ByteBuffer.allocateDirect(bufferSize)
     private var audioRecord: AudioRecord? = null
     private var noiseSuppressor: NoiseSuppressor? = null
@@ -159,7 +165,7 @@ class AudioRecordMicrophone(
 
     override fun read(): ByteBuffer {
         audioRecord?.let {
-            val read = it.read(buffer, bufferSize)
+            val read = it.read(buffer, readChunkBytes)
             check(read >= 0) { "error reading audio, read: $read" }
             // AudioRecord.read ignores the position and limit
             // of the buffer so manually update them.
