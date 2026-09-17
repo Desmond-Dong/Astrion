@@ -221,22 +221,6 @@ fun PanelHomeScreen(
             .background(RemoteBackground)
             .topEdgeSwipeToOpen(enabled = !quickSettingsOpen) { quickSettingsOpen = true }
     ) {
-        if (quickSettingsOpen) {
-            QuickSettingsPanel(
-                connected = deviceState == Connected,
-                micMuted = micMuted,
-                onMicMutedChanged = { viewModel.setMicMuted(it) },
-                raiseToWake = raiseToWake,
-                onRaiseToWakeChanged = { viewModel.setRaiseToWake(it) },
-                onRefreshDevices = { viewModel.refreshDevices() },
-                onOpenSettings = {
-                    context.startActivity(
-                        android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
-                    )
-                },
-                onDismiss = { quickSettingsOpen = false }
-            )
-        }
         Column(modifier = Modifier.fillMaxSize()) {
             RoomTopBar(
                 roomTitle = rooms.getOrNull(pagerState.currentPage)?.title,
@@ -269,6 +253,24 @@ fun PanelHomeScreen(
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
             }
+        }
+
+        // 快捷面板画在内容之上，触摸不会被首页拦截
+        if (quickSettingsOpen) {
+            QuickSettingsPanel(
+                connected = deviceState == Connected,
+                micMuted = micMuted,
+                onMicMutedChanged = { viewModel.setMicMuted(it) },
+                raiseToWake = raiseToWake,
+                onRaiseToWakeChanged = { viewModel.setRaiseToWake(it) },
+                onRefreshDevices = { viewModel.refreshDevices() },
+                onOpenSettings = {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                    )
+                },
+                onDismiss = { quickSettingsOpen = false }
+            )
         }
     }
 }

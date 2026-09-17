@@ -195,10 +195,16 @@ class EspHomeDevice(
                 Timber.d("HA offered to push entity states, subscribing to configured entities")
                 isSubscribedToHomeAssistantStates.value = true
                 val requestedIds = getHaSyncedEntityIds()
-                for (entityId in requestedIds) {
-                    Timber.d("Subscribing to HA entity: $entityId")
+                for (entry in requestedIds) {
+                    // Entries may be `entity_id` or `entity_id.attribute`;
+                    // the protocol carries the attribute in its own field.
+                    val parts = entry.split('.')
+                    val entityId = parts.take(2).joinToString(".")
+                    val attribute = parts.drop(2).joinToString(".")
+                    Timber.d("Subscribing to HA entity: $entityId${if (attribute.isNotEmpty()) ".$attribute" else ""}")
                     sendMessage(SubscribeHomeAssistantStateResponse.newBuilder().apply {
                         this.entityId = entityId
+                        this.attribute = attribute
                         once = false
                     }.build())
                 }
