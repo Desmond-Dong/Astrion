@@ -75,6 +75,6 @@ class TextEntity(
          * protocol itself has no such limit and the HA integration honours the
          * advertised max_length, so config JSON payloads fit in one entity.
          */
-        const val DEFAULT_MAX_LENGTH = 16384
+        const val DEFAULT_MAX_LENGTH = 32768
     }
 }
