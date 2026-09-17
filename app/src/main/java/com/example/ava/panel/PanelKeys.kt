@@ -46,7 +46,6 @@ class PhysicalKeyBus @Inject constructor() {
  */
 @Singleton
 class KeyRouter @Inject constructor(
-    private val satelliteStateHolder: SatelliteStateHolder,
     private val keyBindingExecutor: KeyBindingExecutor,
     private val eventHub: PanelEventHub,
     private val panelUiEvents: PanelUiEvents
@@ -63,14 +62,6 @@ class KeyRouter @Inject constructor(
         // Every physical key is reported to Home Assistant so automations can
         // see (and bind) any key, even when the panel itself ignores it.
         eventHub.announceKeyPressed(press.keyCode, press.longPress)
-        // Physical mic/voice key: start an Assist pipeline without a wake
-        // word, on every screen, like the original voice dialog.
-        if (press.keyCode == KEY_VOICE_X9_HA10 || press.keyCode == KEY_VOICE_HA100) {
-            if (!press.longPress) {
-                satelliteStateHolder.voiceAssistant?.wakeAssistant()
-            }
-            return true
-        }
         // 返回键：离开设备详情页回到上一级；首页键：回到应用首页
         if (press.keyCode == KEY_BACK) {
             if (handler != null) panelUiEvents.requestBack()
@@ -85,9 +76,6 @@ class KeyRouter @Inject constructor(
     }
 
     private companion object {
-        /** Voice assistant keys per device model (§3.10.1). */
-        const val KEY_VOICE_X9_HA10 = 131
-        const val KEY_VOICE_HA100 = 133
         const val KEY_BACK = 4
         const val KEY_HOME_PANEL = 164
     }
@@ -117,7 +105,13 @@ class KeyBindingExecutor @Inject constructor(
     /** @return true when a binding matched and was executed. */
     suspend fun handle(press: KeyPress): Boolean {
         if (press.cancel) return false
-        val binding = panelConfigStore.keyBindings.first().bindings
+        val configured = panelConfigStore.keyBindings.first().bindings
+        // Out-of-the-box default: the HA100 mic key starts a hands-free
+        // conversation even before any bindings are pushed.
+        val bindings = configured.ifEmpty {
+            listOf(KeyBinding(keycode = 133, action = KeyBindingActions.VOICE))
+        }
+        val binding = bindings
             .firstOrNull { it.keycode == press.keyCode && it.longPress == press.longPress }
             ?: return false
         Timber.d("Key binding fired: keyCode=${press.keyCode} long=${press.longPress} action=${binding.action}")
