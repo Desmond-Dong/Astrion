@@ -1,12 +1,124 @@
 blueprint:
   name: Astrion 面板自动布局
   description: >-
-    自动把家里所有可控设备按房间（HA 的"区域"）分组，推送到面板。
-    导入后创建自动化、选择面板的 Panel Layout 实体即可，无需手写任何内容：
-    HA 重启后 / 每天凌晨 4 点 / 家里设备变动时，面板布局自动跟着更新。
+    和原版卡片设置一样：按类别勾选想出现在面板上的设备（每类可多选），
+    面板自动按家里的房间（区域）分组显示，设备名沿用 HA 里的名称。
+    HA 重启后 / 每天凌晨 4 点 / 家里设备变动时，布局自动刷新。
   domain: automation
   author: Astrion
   input:
+    light_entities:
+      name: 灯
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: light
+          multiple: true
+    switch_entities:
+      name: 开关/插座
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: switch
+          multiple: true
+    climate_entities:
+      name: 空调/温控
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: climate
+          multiple: true
+    cover_entities:
+      name: 窗帘
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: cover
+          multiple: true
+    fan_entities:
+      name: 风扇
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: fan
+          multiple: true
+    media_entities:
+      name: 媒体播放器
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+          multiple: true
+    remote_entities:
+      name: 电视/机顶盒遥控
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: remote
+          multiple: true
+    scene_entities:
+      name: 场景
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: scene
+          multiple: true
+    script_entities:
+      name: 脚本
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: script
+          multiple: true
+    weather_entities:
+      name: 天气
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: weather
+          multiple: true
+    humidifier_entities:
+      name: 加湿器
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: humidifier
+          multiple: true
+    water_heater_entities:
+      name: 热水器
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: water_heater
+          multiple: true
+    valve_entities:
+      name: 阀门
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: valve
+          multiple: true
+    vacuum_entities:
+      name: 吸尘器
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: vacuum
+          multiple: true
     layout_entity:
       name: 面板布局实体
       description: 面板设备上的 Panel Layout（text.astrion_layout）
@@ -14,12 +126,6 @@ blueprint:
         entity:
           filter:
             - domain: text
-    exclude_entities:
-      name: 不想出现在面板上的设备（可选）
-      default: []
-      selector:
-        entity:
-          multiple: true
 
 triggers:
   - trigger: homeassistant
@@ -29,24 +135,83 @@ triggers:
   - trigger: event
     event_type: entity_registry_updated
 
+variables:
+  attribute_map:
+    climate:
+      - temperature
+      - current_temperature
+      - fan_mode
+      - preset_mode
+      - min_temp
+      - max_temp
+      - target_temp_low
+      - target_temp_high
+      - preset_modes
+      - fan_modes
+    light:
+      - brightness
+      - color_temp_kelvin
+      - min_color_temp_kelvin
+      - max_color_temp_kelvin
+      - effect_list
+      - supported_color_modes
+      - effect
+    fan:
+      - percentage
+    cover:
+      - current_position
+      - current_tilt_position
+    media_player:
+      - volume_level
+      - media_position
+      - media_duration
+      - media_title
+      - media_artist
+      - source
+      - source_list
+      - sound_mode
+      - sound_mode_list
+  all_entities: >-
+    {{ (light_entities or []) + (switch_entities or []) + (climate_entities or [])
+       + (cover_entities or []) + (fan_entities or []) + (media_entities or [])
+       + (remote_entities or []) + (scene_entities or []) + (script_entities or [])
+       + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
+       + (valve_entities or []) + (vacuum_entities or []) }}
+  layout_json: >-
+    {% set ns = namespace(rooms=[], sync=[], seen=[]) %}
+    {% macro build(es, title) %}
+      {% set grp = namespace(cards=[]) %}
+      {% for e in es %}
+        {% if state_attr(e, 'entity_category') not in ['config', 'diagnostic'] %}
+          {% set grp.cards = grp.cards + [{'name': states[e].name if e in states else e, 'entities': [{'entity_id': e}]}] %}
+          {% set ns.sync = ns.sync + [e] %}
+          {% for a in attribute_map.get(e.split('.')[0], []) %}
+            {% set ns.sync = ns.sync + [e ~ '.' ~ a] %}
+          {% endfor %}
+          {% set ns.seen = ns.seen + [e] %}
+        {% endif %}
+      {% endfor %}
+      {% if grp.cards | count > 0 %}
+        {% set ns.rooms = ns.rooms + [{'title': title, 'cards': grp.cards}] %}
+      {% endif %}
+    {% endmacro %}
+    {% for area in areas() %}
+      {% set es = all_entities | select('in', area_entities(area)) | reject('in', ns.seen) | list %}
+      {% if es | count > 0 %}
+        {{ build(es, area_name(area)) }}
+      {% endif %}
+    {% endfor %}
+    {% set rest = all_entities | reject('in', ns.seen) | list %}
+    {% if rest | count > 0 %}
+      {{ build(rest, '其他') }}
+    {% endif %}
+    {{ {'rooms': ns.rooms, 'sync_entities': ns.sync} | to_json }}
+
 actions:
   - action: text.set_value
     target:
       entity_id: !input layout_entity
     data:
-      value: >-
-        {% set keep = 'light|switch|fan|climate|cover|media_player|remote|scene|script|humidifier|water_heater|valve|vacuum|lawn_mower' %}
-        {% set exclude = exclude_entities %}
-        {% set ns = namespace(rows: []) %}
-        {% for area in areas() %}
-          {% set es = area_entities(area)
-             | select('match', '^(' ~ keep ~ ')\\.')
-             | reject('in', exclude)
-             | list %}
-          {% if es | count > 0 %}
-            {% set ns.rows = ns.rows + [area_name(area) ~ '=' ~ (es | join(','))] %}
-          {% endif %}
-        {% endfor %}
-        {{ ns.rows | join(';') }}
+      value: "{{ layout_json }}"
 
 mode: single
