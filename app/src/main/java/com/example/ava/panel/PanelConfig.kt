@@ -242,8 +242,7 @@ data class PanelKeyBindings(
             if (text.trimStart().startsWith("{")) return fromJson(text)
             return runCatching {
                 val bindings = mutableListOf<KeyBinding>()
-                for (rawLine in text.split('
-', ';')) {
+                for (rawLine in text.split('\n', ';')) {
                     val line = rawLine.trim()
                     if (line.isEmpty() || line.startsWith("#") || !line.contains('=')) continue
                     val keyPart = line.substringBefore('=').trim().lowercase()
@@ -345,8 +344,7 @@ data class IrCodebook(
             if (text.trimStart().startsWith("{")) return fromJson(text)
             return runCatching {
                 val devices = mutableMapOf<String, MutableMap<String, String>>()
-                for (rawLine in text.split('
-', ';')) {
+                for (rawLine in text.split('\n', ';')) {
                     val line = rawLine.trim()
                     if (line.isEmpty() || line.startsWith("#") || !line.contains('=')) continue
                     val device = line.substringBefore('|').trim()
