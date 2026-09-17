@@ -448,15 +448,27 @@ class DeviceBuilder @Inject constructor(
 
     private suspend fun buildIrEntities(keyAllocator: EntityKeyAllocator): List<Entity> {
         val codebook = panelConfigStore.irCodebook.first()
-        if (codebook.devices.isEmpty()) return emptyList()
 
         val infraredManager = InfraredManager(context)
         if (!infraredManager.available) {
-            Timber.w("IR codebook configured but the box has no IR emitter, skipping")
+            Timber.w("This box has no IR emitter; skipping infrared entities")
             return emptyList()
         }
 
         val entities = mutableListOf<Entity>()
+
+        // The hardware transmitter is always exposed so Home Assistant's
+        // native infrared integration can drive the panel directly, even
+        // before any codebook is pushed.
+        entities += InfraredEntity(
+            key = keyAllocator.next(),
+            name = "Infrared",
+            objectId = "infrared",
+            transmit = { carrierFrequencyHz, timings, repeatCount ->
+                irController.transmitTimings(carrierFrequencyHz, timings, repeatCount)
+            }
+        )
+
         for ((deviceName, buttons) in codebook.devices) {
             val deviceSlug = irObjectId(deviceName)
             // Raw timings transmitter (ESPHome infrared service)

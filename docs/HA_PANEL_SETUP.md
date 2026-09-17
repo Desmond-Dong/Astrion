@@ -38,7 +38,8 @@ Home Assistant 里通过 ESPHome 集成完成。设备上不做任何本地配�
 | `wake_assistant` | button | 远程触发一次免唤醒对话（等同按设备麦克风键） |
 | `noise_suppression` / `echo_cancellation` / `auto_gain` | switch ☰ | 硬件降噪/回声消除/自动增益（机带麦克风，挂载到采集 session，设备不支持时自动跳过）。麦克风固定为机带默认源，语音固定外放，无需选择 |
 | `media_title` / `media_artist` | text_sensor | 面板媒体元数据 |
-| `<设备名>`（每个码库设备） | infrared | 直发原始时序（ESPHome infrared 服务） |
+| `infrared` | infrared | **硬件红外发射器**（始终存在）：HA 原生红外直接调用，`remote.send_command`/自动化发原始时序都走它 |
+| `<设备名>`（每个码库设备） | infrared | 码库设备的原始时序直发（ESPHome infrared 服务） |
 | `<按键> (<设备名>)`（每个码库按键） | button | 单键红外发射 |
 | `panel_page_visited` | event | 用户在面板上跳页时触发 `page_visited`（原 `astrion/page_visited`，HA 发起的跳页不触发） |
 | `panel_button_pressed` | event | `button_pressed`（屏幕上的遥控键）/ `key_pressed` / `key_long_pressed`（**任意物理按键**，短按/长按，原 `astrion/control_command`） |
