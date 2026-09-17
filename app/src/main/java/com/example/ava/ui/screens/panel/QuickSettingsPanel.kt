@@ -34,7 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ava.services.SatelliteStateHolder
-import com.example.ava.utils.NetworkUtils
+import com.example.ava.utils.getLocalIpAddress
 import com.example.ava.esphome.Connected
 import com.example.ava.ui.theme.RemoteColors
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -136,7 +136,7 @@ fun QuickSettingsPanel(
             Spacer(Modifier.height(10.dp))
 
             // 网络（原版 llWifiButton：WiFi 状态 + IP）
-            val ip = remember { NetworkUtils.getLocalIpAddress() ?: "" }
+            val ip = remember { getLocalIpAddress() ?: "" }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("网络", color = RemoteColors.onSurface, fontSize = 14.sp)
                 Spacer(Modifier.weight(1f))
