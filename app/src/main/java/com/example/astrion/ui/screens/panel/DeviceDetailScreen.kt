@@ -135,14 +135,17 @@ class DeviceDetailViewModel @Inject constructor(
     /** 物理键长按自动重复（原版 200ms 间隔），松手 cancel 停止。 */
     private var holdJob: Job? = null
 
+    // 稳定引用：入栈/出栈必须是同一个对象
+    private val keyHandler: suspend (KeyPress) -> Boolean = { press -> handleKey(press) }
+
     init {
         // The topmost device page repurposes the physical keys first
         // (§3.10.4 物理键语义); unhandled keys fall through to the HA bindings.
-        keyRouter.setHandler(::handleKey)
+        keyRouter.pushHandler(keyHandler)
     }
 
     override fun onCleared() {
-        keyRouter.setHandler(null)
+        keyRouter.popHandler(keyHandler)
         stopHold()
         super.onCleared()
     }

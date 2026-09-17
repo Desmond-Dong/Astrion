@@ -50,17 +50,26 @@ class KeyRouter @Inject constructor(
     private val eventHub: PanelEventHub,
     private val panelUiEvents: PanelUiEvents
 ) {
-    private var handler: (suspend (KeyPress) -> Boolean)? = null
+    // 原版 BaseActivity：页面进入注册按键监听、离开注销，栈顶优先。
+    // 用栈而不是单个引用，叠加打开多个设备页时返回后上一页按键不丢。
+    private val handlers = mutableListOf<(suspend (KeyPress) -> Boolean)>()
 
-    fun setHandler(h: (suspend (KeyPress) -> Boolean)?) {
-        handler = h
+    fun pushHandler(h: (suspend (KeyPress) -> Boolean)) {
+        handlers.remove(h)
+        handlers.add(h)
     }
+
+    fun popHandler(h: (suspend (KeyPress) -> Boolean)) {
+        handlers.remove(h)
+    }
+
+    private fun topHandler(): (suspend (KeyPress) -> Boolean)? = handlers.lastOrNull()
 
     /** @return true when the key was consumed. */
     suspend fun dispatch(press: KeyPress): Boolean {
         if (press.cancel) {
             // 长按松开：交给顶层页面停止自动重复步进；不被任何绑定消费
-            handler?.invoke(press)
+            topHandler()?.invoke(press)
             return true
         }
         // Every physical key is reported to Home Assistant so automations can
@@ -68,14 +77,14 @@ class KeyRouter @Inject constructor(
         eventHub.announceKeyPressed(press.keyCode, press.longPress)
         // 返回键：离开设备详情页回到上一级；首页键：回到应用首页
         if (press.keyCode == KEY_BACK) {
-            if (handler != null) panelUiEvents.requestBack()
+            if (handlers.isNotEmpty()) panelUiEvents.requestBack()
             return true
         }
         if (press.keyCode == KEY_HOME_PANEL) {
             panelUiEvents.requestGoHome()
             return true
         }
-        if (handler?.invoke(press) == true) return true
+        if (topHandler()?.invoke(press) == true) return true
         return keyBindingExecutor.handle(press)
     }
 
