@@ -85,6 +85,21 @@ class PanelViewModel @Inject constructor(
     }
 }
 
+/** Per-type accent pair for the icon gradient (原版彩色设备图标风格). */
+fun cardAccent(type: String): List<Color> = when (type) {
+    PanelCardTypes.TV -> listOf(Color(0xFF2F6BFF), Color(0xFF69B6FF))
+    PanelCardTypes.LIGHT -> listOf(Color(0xFFFF9F2E), Color(0xFFFFD75E))
+    PanelCardTypes.CLIMATE -> listOf(Color(0xFF1FB6C9), Color(0xFF63E5E0))
+    PanelCardTypes.FAN -> listOf(Color(0xFF2ECC71), Color(0xFF8BE9A8))
+    PanelCardTypes.COVER -> listOf(Color(0xFF8E6BFF), Color(0xFFC9A6FF))
+    PanelCardTypes.MEDIA_PLAYER -> listOf(Color(0xFFFF5E7A), Color(0xFFFFA26B))
+    PanelCardTypes.SCENE -> listOf(Color(0xFFF2B01E), Color(0xFFFFE08A))
+    PanelCardTypes.WEATHER -> listOf(Color(0xFF39A0FF), Color(0xFF9BD1FF))
+    PanelCardTypes.HOST -> listOf(Color(0xFF5B7CFA), Color(0xFF8FA6FF))
+    PanelCardTypes.SWITCH_MONITOR -> listOf(Color(0xFF2FBF9B), Color(0xFF7BE3C3))
+    else -> listOf(Color(0xFF4C6A92), Color(0xFF7E9CC4))
+}
+
 /** Maps a card type to its icon resource (§4 aiks-* card icons). */
 fun cardIconRes(type: String): Int = when (type) {
     PanelCardTypes.TV -> R.drawable.ic_panel_tv
@@ -253,7 +268,7 @@ private fun RoomTopBar(
         ) {
             Text(
                 text = roomTitle ?: "Astrion",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = RemoteColors.onSurface
             )
@@ -305,7 +320,7 @@ private fun RoomCardsGrid(
     }
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
@@ -328,43 +343,61 @@ private fun DeviceCard(
     stateText: String,
     onClick: () -> Unit,
 ) {
+    val accent = cardAccent(card.resolvedType)
+    val isOn = stateText.contains("开启") || stateText.contains("打开") ||
+        stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
+
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(22.dp),
         color = RemoteColors.surface,
         modifier = Modifier
             .fillMaxWidth()
-            .height(110.dp)
+            .height(132.dp)
             .clickable(onClick = onClick)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .background(RemoteColors.accentContainer, RoundedCornerShape(12.dp)),
+                    .size(52.dp)
+                    .background(
+                        Brush.linearGradient(accent),
+                        RoundedCornerShape(16.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     painter = painterResource(cardIconRes(card.resolvedType)),
                     contentDescription = card.resolvedType,
-                    tint = RemoteColors.accent,
-                    modifier = Modifier.size(26.dp)
+                    tint = Color.White,
+                    modifier = Modifier.size(30.dp)
                 )
             }
             Column {
                 Text(
                     text = name,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color = RemoteColors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (stateText.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (stateText.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(
+                                    color = if (isOn) RemoteColors.secondary else RemoteColors.outline,
+                                    shape = CircleShape
+                                )
+                        )
+                        Spacer(Modifier.width(5.dp))
+                    }
                     Text(
-                        text = stateText,
+                        text = stateText.ifBlank { " " },
                         style = MaterialTheme.typography.bodySmall,
                         color = RemoteColors.onSurfaceVariant,
                         maxLines = 1,
