@@ -75,7 +75,8 @@ class PanelConfigStore @Inject constructor(
      */
     val effectiveLayout: Flow<PanelLayout> =
         kotlinx.coroutines.flow.combine(layout, irCodebook) { layout, codebook ->
-            if (layout.rooms.isEmpty() && codebook.devices.isNotEmpty()) {
+            val deduped = dedupeCards(layout)
+            if (deduped.rooms.isEmpty() && codebook.devices.isNotEmpty()) {
                 PanelLayout(
                     rooms = listOf(
                         PanelRoom(
@@ -89,12 +90,28 @@ class PanelConfigStore @Inject constructor(
                             }.toMutableList()
                         )
                     ),
-                    pages = layout.pages,
-                    syncEntities = layout.syncEntities
+                    pages = deduped.pages,
+                    syncEntities = deduped.syncEntities
                 )
             } else {
-                layout
+                deduped
             }
+        }
+
+        // Duplicate entries (same entity listed twice) would crash the grid
+        // with duplicate LazyColumn keys: later duplicates get a numbered id.
+        fun dedupeCards(layout: PanelLayout): PanelLayout {
+            val seen = mutableMapOf<String, Int>()
+            val rooms = layout.rooms.map { room ->
+                PanelRoom(
+                    room.title,
+                    room.cards.map { card ->
+                        val n = seen.merge(card.cardId, 1, Int::plus) ?: 1
+                        if (n == 1) card else card.copy(uuid = "${card.cardId}_$n")
+                    }.toMutableList()
+                )
+            }
+            return PanelLayout(rooms, layout.pages, layout.syncEntities)
         }
 
     val keyBindings: Flow<PanelKeyBindings> =
