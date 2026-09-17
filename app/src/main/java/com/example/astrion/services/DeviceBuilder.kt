@@ -54,7 +54,9 @@ import com.example.esphomeproto.api.deviceInfoResponse
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,6 +72,11 @@ import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+
+/** 蓝图分片布局的分片数量与单片字符数（≤255，规避 HA 单条 text 上限）。 */
+private const val LAYOUT_PART_COUNT = 16
+private const val LAYOUT_PART_CHARS = 250
+private const val LAYOUT_ASSEMBLE_DELAY_MS = 1200L
 
 /**
  * Builds the ESPHome device from Home Assistant driven configuration only
@@ -95,6 +102,27 @@ class DeviceBuilder @Inject constructor(
     private val eventHub: com.example.astrion.panel.PanelEventHub,
     private val screensaverController: com.example.astrion.panel.ScreensaverController
 ) {
+    // 分片布局缓冲：蓝图把长 JSON 切片写入 Panel Layout 00–15，
+    // 静置 1.2 秒后按顺序拼接应用（任意分片为空即视为结束）。
+    private val layoutPartScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val layoutParts = Array(LAYOUT_PART_COUNT) { "" }
+    private var layoutPartJob: Job? = null
+
+    private fun scheduleLayoutAssembly(idx: Int, value: String) {
+        synchronized(layoutParts) { layoutParts[idx] = value }
+        layoutPartJob?.cancel()
+        layoutPartJob = layoutPartScope.launch {
+            delay(LAYOUT_ASSEMBLE_DELAY_MS)
+            val assembled = synchronized(layoutParts) {
+                layoutParts.takeWhile { it.isNotEmpty() }.joinToString("")
+            }
+            if (assembled.isNotEmpty()) {
+                Timber.d("Layout assembled from parts: ${assembled.length} chars")
+                panelConfigStore.applyLayoutJson(assembled)
+            }
+        }
+    }
+
     suspend fun buildVoiceSatellite(coroutineContext: CoroutineContext): EspHomeDevice {
         val satelliteSettings = satelliteSettingsStore.get()
         // Need a reference to voiceOutput as it needs to be passed to
@@ -398,23 +426,41 @@ class DeviceBuilder @Inject constructor(
     private suspend fun buildConfigEntities(
         keyAllocator: EntityKeyAllocator
     ): List<Entity> {
-        val config = panelConfigStore.raw.first()
-        return listOf(
-            TextEntity(
-                key = keyAllocator.next(),
-                name = "Panel Layout",
-                objectId = "astrion_layout",
-                initialState = config.layoutJson,
-                onText = { json -> panelConfigStore.applyLayoutJson(json) }
-            ),
-            TextEntity(
-                key = keyAllocator.next(),
-                name = "IR Codes",
-                objectId = "astrion_ir_codes",
-                initialState = config.irCodesJson,
-                onText = { json -> panelConfigStore.applyIrCodesJson(json) }
+        val config = panelConfigStore.raw.first()        return buildList {
+            // 单实体：手写一行式布局（分号分隔），短内容走这里
+            add(
+                TextEntity(
+                    key = keyAllocator.next(),
+                    name = "Panel Layout",
+                    objectId = "astrion_layout",
+                    initialState = config.layoutJson,
+                    onText = { json -> panelConfigStore.applyLayoutJson(json) }
+                )
             )
-        )
+            // 分片实体（Panel Layout 00–15）：蓝图自动布局写入长 JSON 用，
+            // 面板按顺序拼接后应用（HA 对单条 text 可能强制 255 上限）
+            for (i in 0 until LAYOUT_PART_COUNT) {
+                val idx = i
+                add(
+                    TextEntity(
+                        key = keyAllocator.next(),
+                        name = "Panel Layout %02d".format(idx),
+                        objectId = "astrion_layout_part_%02d".format(idx),
+                        disabledByDefault = true,
+                        onText = { value -> scheduleLayoutAssembly(idx, value) }
+                    )
+                )
+            }
+            add(
+                TextEntity(
+                    key = keyAllocator.next(),
+                    name = "IR Codes",
+                    objectId = "astrion_ir_codes",
+                    initialState = config.irCodesJson,
+                    onText = { json -> panelConfigStore.applyIrCodesJson(json) }
+                )
+            )
+        }
     }
 
     /**

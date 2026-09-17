@@ -120,13 +120,15 @@ blueprint:
           filter:
             - domain: vacuum
           multiple: true
-    layout_entity:
-      name: 面板布局实体
-      description: 面板设备上的 Panel Layout（text.astrion_layout）
+    layout_part_entities:
+      name: 面板布局分片实体（Panel Layout 00–15）
+      description: 面板设备上的 Panel Layout 00 到 Panel Layout 15，按 00→15 顺序全部勾选
+      default: []
       selector:
         entity:
           filter:
             - domain: text
+          multiple: true
 
 triggers:
   - trigger: homeassistant
@@ -137,7 +139,7 @@ triggers:
     event_type: entity_registry_updated
 
 variables:
-  layout_entity: !input layout_entity
+  layout_part_entities: !input layout_part_entities
 
 actions:
   # 勾选的设备清单与布局 JSON 必须在动作序列里逐步求值：
@@ -219,12 +221,18 @@ actions:
           {% set ns.rooms = ns.rooms + [{'title': a, 'cards': cards.items}] %}
         {% endfor %}
         {{ {'rooms': ns.rooms, 'sync_entities': ns.sync} | to_json }}
-  - if: "{{ all_entities | count > 0 }}"
+  - if: "{{ all_entities | count > 0 and layout_part_entities | count == 16 }}"
     then:
-      - action: text.set_value
-        target:
-          entity_id: "{{ layout_entity }}"
-        data:
-          value: "{{ layout_json }}"
+      - repeat:
+          for_each: "{{ layout_part_entities }}"
+          sequence:
+            - variables:
+                part_index: "{{ repeat.index - 1 }}"
+                part_value: "{{ layout_json[(part_index * 250):(part_index * 250 + 250)] }}"
+            - action: text.set_value
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                value: "{{ part_value }}"
 
 mode: single
