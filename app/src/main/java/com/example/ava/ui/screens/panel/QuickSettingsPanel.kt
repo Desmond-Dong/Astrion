@@ -52,6 +52,10 @@ fun QuickSettingsPanel(
     connected: Boolean,
     micMuted: Boolean,
     onMicMutedChanged: (Boolean) -> Unit,
+    raiseToWake: Boolean,
+    onRaiseToWakeChanged: (Boolean) -> Unit,
+    onRefreshDevices: () -> Unit,
+    onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -129,6 +133,53 @@ fun QuickSettingsPanel(
                 valueRange = 20f..255f
             )
             Spacer(Modifier.height(10.dp))
+
+            // 网络（原版 llWifiButton：WiFi 状态 + IP）
+            val ip = remember { com.example.ava.utils.NetworkUtils.getLocalIpAddress() ?: "" }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("网络", color = RemoteColors.onSurface, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = if (ip.isNotBlank()) "WiFi · $ip" else "未连接",
+                    color = RemoteColors.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+
+            // 刷新设备（原版 rlRefreshDevice：重连 HA 重拉实体）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onRefreshDevices)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("刷新设备", color = RemoteColors.onSurface, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                Text("重连 ↻", color = RemoteColors.accent, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(6.dp))
+
+            // 抬手唤醒（原版 rlWake）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("抬手唤醒", color = RemoteColors.onSurface, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                Switch(checked = raiseToWake, onCheckedChange = onRaiseToWakeChanged)
+            }
+            Spacer(Modifier.height(6.dp))
+
+            // 系统设置（原版 rlSetting）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenSettings)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("系统设置", color = RemoteColors.onSurface, fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(8.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("麦克风静音", color = RemoteColors.onSurface, fontSize = 14.sp)

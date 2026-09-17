@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -70,6 +71,7 @@ class PanelViewModel @Inject constructor(
     private val activityNavigator: ActivityNavigator,
     satelliteStateHolder: SatelliteStateHolder,
     private val microphoneSettingsStore: com.example.ava.settings.MicrophoneSettingsStore,
+    private val displaySettingsStore: com.example.ava.settings.DisplaySettingsStore,
 ) : ViewModel() {
     val layout = panelConfigStore.layout
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PanelLayout())
@@ -77,8 +79,19 @@ class PanelViewModel @Inject constructor(
     val currentPage = activityNavigator.currentPage
     val deviceState = satelliteStateHolder.deviceState
     val micMuted = microphoneSettingsStore.muted
+    val raiseToWake = displaySettingsStore.raiseToWakeThreshold
+        .map { it > 0f }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun selectRoom(title: String) = activityNavigator.setPage(title)
+
+    fun setRaiseToWake(enabled: Boolean) {
+        viewModelScope.launch {
+            displaySettingsStore.raiseToWakeThreshold.set(if (enabled) 4f else 0f)
+        }
+    }
+
+    fun refreshDevices() = satelliteStateHolder.reconnect()
 
     fun setMicMuted(muted: Boolean) {
         viewModelScope.launch { micMuted.set(muted) }
@@ -179,6 +192,8 @@ fun PanelHomeScreen(
     val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
     val deviceState by viewModel.deviceState.collectAsStateWithLifecycle()
     val micMuted by viewModel.micMuted.collectAsStateWithLifecycle(initialValue = false)
+    val raiseToWake by viewModel.raiseToWake.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     val rooms = remember(layout) { layout.rooms }
 
@@ -208,6 +223,14 @@ fun PanelHomeScreen(
                 connected = deviceState == Connected,
                 micMuted = micMuted,
                 onMicMutedChanged = { viewModel.setMicMuted(it) },
+                raiseToWake = raiseToWake,
+                onRaiseToWakeChanged = { viewModel.setRaiseToWake(it) },
+                onRefreshDevices = { viewModel.refreshDevices() },
+                onOpenSettings = {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                    )
+                },
                 onDismiss = { quickSettingsOpen = false }
             )
         }

@@ -77,6 +77,7 @@ class VoiceSatelliteService() : LifecycleService() {
             Timber.d("Stopping voice satellite")
             satellite.close()
             satelliteStateHolder.voiceAssistant = null
+            satelliteStateHolder.device = null
             voiceSatelliteNsd.getAndSet(null)?.unregister(this)
             wifiWakeLock.release()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -167,8 +168,10 @@ class VoiceSatelliteService() : LifecycleService() {
             deviceBuilder.buildVoiceSatellite(lifecycleScope.coroutineContext)
                 .apply { start() }
         _voiceSatellite.value = satellite
-        // Exposed for the physical mic key push-to-talk (免唤醒对话).
+        // Exposed for the physical mic key push-to-talk (免唤醒对话) and the
+        // quick settings 刷新 entry.
         satelliteStateHolder.voiceAssistant = satellite.voiceAssistant
+        satelliteStateHolder.device = satellite
         voiceSatelliteNsd.set(registerVoiceSatelliteNsd(settings))
         wifiWakeLock.acquire()
     }

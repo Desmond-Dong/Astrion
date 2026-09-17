@@ -53,3 +53,15 @@ fun setTrustAllSSLCertificates(trustAll: Boolean) {
         Timber.e(t, "Failed to ${if (trustAll) "disable" else "enable"} SSL verification")
     }
 }
+
+/**
+ * The device's site-local IPv4 address (shown in the quick settings panel),
+ * or null when offline.
+ */
+fun getLocalIpAddress(): String? = runCatching {
+    java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+        .filter { it.isUp && !it.isLoopback }
+        .flatMap { it.inetAddresses.asSequence() }
+        .firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }
+        ?.hostAddress
+}.getOrNull()

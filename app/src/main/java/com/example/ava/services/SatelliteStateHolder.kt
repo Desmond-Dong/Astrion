@@ -28,6 +28,14 @@ class SatelliteStateHolder @Inject constructor() {
      */
     var voiceAssistant: VoiceAssistant? = null
 
+    /** The running device, used by the quick settings 刷新 entry. */
+    var device: com.example.ava.esphome.EspHomeDevice? = null
+
+    /** Re-connects the Home Assistant client, re-listing all entities. */
+    fun reconnect() {
+        device?.disconnectClient()
+    }
+
     fun set(state: EspHomeState) {
         _deviceState.value = state
     }
