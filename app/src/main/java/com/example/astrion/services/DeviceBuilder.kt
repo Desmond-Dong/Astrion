@@ -426,7 +426,8 @@ class DeviceBuilder @Inject constructor(
     private suspend fun buildConfigEntities(
         keyAllocator: EntityKeyAllocator
     ): List<Entity> {
-        val config = panelConfigStore.raw.first()        return buildList {
+        val config = panelConfigStore.raw.first()
+        return buildList {
             // 单实体：手写一行式布局（分号分隔），短内容走这里
             add(
                 TextEntity(
