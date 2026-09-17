@@ -38,7 +38,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class ScreensaverController @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val displaySettingsStore: DisplaySettingsStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
