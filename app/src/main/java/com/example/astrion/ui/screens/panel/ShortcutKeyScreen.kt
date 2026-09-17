@@ -134,7 +134,7 @@ fun ShortcutKeysScreen(
             )
         }
         Text(
-            text = "绑定后按实体键一键直达；长按实体键可随时进入对应绑定页",
+            text = "每个键绑定对应类型的设备，按下即可一键直达；长按实体键随时进入该键的绑定页",
             color = RemoteColors.onSurfaceVariant,
             fontSize = 13.sp,
             modifier = Modifier.padding(bottom = 12.dp)
@@ -215,9 +215,19 @@ fun ShortcutBindScreen(
     viewModel: ShortcutBindViewModel = hiltViewModel(),
 ) {
     val layout by viewModel.layout.collectAsStateWithLifecycle()
-    var tab by remember { mutableStateOf(BindTab.DEVICE) }
+    // 原版：设备键只有 设备(按类型过滤)/房间 两页签；自定义键是 场景/房间
+    val tabs = if (ShortcutBindingStore.isSceneKey(keyCode)) {
+        listOf(BindTab.SCENE, BindTab.ROOM)
+    } else {
+        listOf(BindTab.DEVICE, BindTab.ROOM)
+    }
+    val current = remember { viewModel.currentBinding() }
+    var tab by remember {
+        mutableStateOf(if (current?.type == "DeviceRoom") BindTab.ROOM else tabs.first())
+    }
     // 选中的绑定；null = 未选（保存即解绑，原版行为）
-    var selected by remember { mutableStateOf(viewModel.currentBinding()) }
+    var selected by remember { mutableStateOf(current) }
+    val deviceTabLabel = ShortcutBindingStore.keyDeviceTabLabel(keyCode)
 
     Column(
         modifier = Modifier
@@ -248,7 +258,7 @@ fun ShortcutBindScreen(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BindTab.entries.forEach { entry ->
+            tabs.forEach { entry ->
                 val isSel = entry == tab
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -256,7 +266,7 @@ fun ShortcutBindScreen(
                     modifier = Modifier.clickable { tab = entry }
                 ) {
                     Text(
-                        text = entry.label,
+                        text = if (entry == BindTab.DEVICE) deviceTabLabel else entry.label,
                         color = if (isSel) Color.White else RemoteColors.onSurface,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -283,27 +293,44 @@ fun ShortcutBindScreen(
                     )
                 }
 
-                else -> {
-                    val wantScene = tab == BindTab.SCENE
-                    layout.rooms.forEach { room ->
-                        val cards = room.cards.filter {
-                            (it.resolvedType == PanelCardTypes.SCENE) == wantScene
+                BindTab.SCENE -> layout.rooms.forEach { room ->
+                    val cards = room.cards.filter { it.resolvedType == PanelCardTypes.SCENE }
+                    if (cards.isNotEmpty()) {
+                        item(key = "${room.title}-scene-header") { RoomHeader(room) }
+                        items(cards.size, key = { cards[it].cardId }) { index ->
+                            val card = cards[index]
+                            BindRow(
+                                title = card.name.ifBlank {
+                                    card.primaryEntity?.entityId ?: card.cardId
+                                },
+                                subtitle = "场景",
+                                selected = selected?.type == "Device" && selected?.uuid == card.cardId,
+                                onClick = {
+                                    selected = toggleSelection(selected, "Device", card.cardId)
+                                }
+                            )
                         }
-                        if (cards.isNotEmpty()) {
-                            item(key = "${room.title}-header") { RoomHeader(room) }
-                            items(cards.size, key = { cards[it].cardId }) { index ->
-                                val card = cards[index]
-                                BindRow(
-                                    title = card.name.ifBlank {
-                                        card.primaryEntity?.entityId ?: card.cardId
-                                    },
-                                    subtitle = deviceTypeLabel(card),
-                                    selected = selected?.type == "Device" && selected?.uuid == card.cardId,
-                                    onClick = {
-                                        selected = toggleSelection(selected, "Device", card.cardId)
-                                    }
-                                )
-                            }
+                    }
+                }
+
+                BindTab.DEVICE -> layout.rooms.forEach { room ->
+                    // 原版核心：设备键只能绑它专属类型的设备
+                    val keyType = ShortcutBindingStore.keyDeviceType(keyCode)
+                    val cards = room.cards.filter { it.resolvedType == keyType }
+                    if (cards.isNotEmpty()) {
+                        item(key = "${room.title}-device-header") { RoomHeader(room) }
+                        items(cards.size, key = { cards[it].cardId }) { index ->
+                            val card = cards[index]
+                            BindRow(
+                                title = card.name.ifBlank {
+                                    card.primaryEntity?.entityId ?: card.cardId
+                                },
+                                subtitle = deviceTypeLabel(card),
+                                selected = selected?.type == "Device" && selected?.uuid == card.cardId,
+                                onClick = {
+                                    selected = toggleSelection(selected, "Device", card.cardId)
+                                }
+                            )
                         }
                     }
                 }

@@ -76,7 +76,7 @@ Home Assistant 里通过 ESPHome 集成完成（布局、红外码库、按键�
 实体是单行输入框，分号就是"换行"），类型/图标/状态全部自动：
 
 ```
-客厅=remote.mi_tv, media_player.mi_tv | 电视; 卧室=light.bed, fan.bed
+客厅=remote.tv, media_player.tv | 电视; 卧室=light.bed, fan.bed
 ```
 
 多行粘贴同样支持：
@@ -104,11 +104,11 @@ Home Assistant 里通过 ESPHome 集成完成（布局、红外码库、按键�
         {
           "type": "tv",
           "uuid": "tv1",
-          "name": "小米电视",
+          "name": "客厅电视",
           "tv_type": "android_tv",
           "entities": [
-            {"key": "POWER", "entity_id": "remote.mi_tv", "value": "POWER"},
-            {"key": "VOLUME_UP", "entity_id": "media_player.mi_tv"}
+            {"key": "POWER", "entity_id": "remote.tv", "value": "POWER"},
+            {"key": "VOLUME_UP", "entity_id": "media_player.tv"}
           ]
         },
         {
@@ -134,9 +134,9 @@ Home Assistant 里通过 ESPHome 集成完成（布局、红外码库、按键�
     "climate.ac.temperature",
     "climate.ac.current_temperature",
     "climate.ac.fan_mode",
-    "media_player.mi_tv",
-    "media_player.mi_tv.media_title",
-    "media_player.mi_tv.media_artist"
+    "media_player.tv",
+    "media_player.tv.media_title",
+    "media_player.tv.media_artist"
   ]
 }
 ```
@@ -190,14 +190,14 @@ Broadlink 迁移均可），面板按键时自动 `remote.send_command` → HA �
 
 ```
 # 注释
-小米电视 | POWER=38000,9000,4500,560,560,560,1690,...
-小米电视 | MUTE=sGipAAECAwQFBgcICQ==
+客厅电视 | POWER=38000,9000,4500,560,560,560,1690,...
+客厅电视 | MUTE=sGipAAECAwQFBgcICQ==
 机顶盒 | POWER=JgBMACHgERAQERAAHQAA
 ```
 
 码串支持三种格式（自动识别）：逗号时序、Broadlink base64、AES base64。
 设备名与布局里 tv 卡的 `name` 一致时按键本地直发。也兼容完整 JSON：
-`{"小米电视": {"POWER": "...", "MUTE": "..."}}`。
+`{"客厅电视": {"POWER": "...", "MUTE": "..."}}`。
 
 每个本地码库设备同时暴露一个 `infrared` 实体（原始时序直发）和逐键 `button`。
 
@@ -212,10 +212,20 @@ Broadlink 迁移均可），面板按键时自动 `remote.send_command` → HA �
 
 ### 设备端绑定（推荐）
 
-- **入口**：顶部下滑快捷面板 → **快捷键绑定**；或**长按任意可绑定键（F4–F11）
+按键与可绑定的设备类型是**一一对应**的（原版固件键位表）：
+
+| 物理键 | 键码 | 只能绑定 | 未绑定/长按行为 |
+|---|---|---|---|
+| 灯按键 (F4) | 134 | 灯 | 开/关切换 |
+| 窗帘按键 (F5) | 135 | 窗帘 | 打开窗帘页 |
+| 音乐按键 (F6) | 136 | 媒体播放器 | 打开媒体页 |
+| 空调按键 (F7) | 137 | 空调 | 打开空调页 |
+| 自定义按键一~四 (F8–F11) | 138–141 | 场景/脚本 | 执行场景 |
+
+- **入口**：顶部下滑快捷面板 → **快捷键绑定**；或**长按任意可绑定键
   直接进入该键的绑定页**（设备详情页已消费的键除外）。
-- 绑定页里从 **设备 / 场景 / 房间** 三个页签里选一个目标，点 **保存**；
-  不选中直接保存 = **解除绑定**（再点一次已选中的项也会取消选中）。
+- 绑定页里从 **设备（按上面表格的类型过滤）/ 场景 / 房间** 里选一个目标，
+  点 **保存**；不选中直接保存 = **解除绑定**（再点一次已选中的项也会取消选中）。
 - 绑定后的行为（与原版一致）：
   - 灯 / 开关 / 风扇 → 按当前状态**开/关切换**
   - 场景 / 脚本 → **执行**

@@ -271,7 +271,6 @@ fun PanelHomeScreen(
         if (rooms.isNotEmpty()) {
             BottomActionBar(
                 connected = connected,
-                onAdd = { quickSettingsOpen = true },
                 onRefresh = { viewModel.refreshDevices() },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -603,21 +602,20 @@ private fun PageDotsIndicator(
     }
 }
 
-/** 原生底部操作条：未连接时重连，已连接时添加设备。 */
+/** 原生底部操作条：刷新/重连（设备的增删由 HA 推送 astrion_layout 管理）。 */
 @Composable
 private fun BottomActionBar(
     connected: Boolean,
-    onAdd: () -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val icon = if (connected) "+" else "↻"
-    val label = if (connected) "添加设备" else "重新连接"
+    val icon = if (connected) "↻" else "↻"
+    val label = if (connected) "刷新设备" else "重新连接"
     Surface(
         shape = RoundedCornerShape(22.dp),
         color = RemoteColors.surfaceVariant,
         border = BorderStroke(1.dp, RemoteColors.rowSeparator),
-        modifier = modifier.clickable { if (connected) onAdd() else onRefresh() }
+        modifier = modifier.clickable(onClick = onRefresh)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
