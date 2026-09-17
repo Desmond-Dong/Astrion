@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Astrion" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- The panel is an always-dark appliance (原版 HaRemote：纯黑面板).
+         A dark parent + dark window background prevents any white flash or
+         white device-detail page. -->
+    <style name="Theme.Astrion" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/panel_background</item>
+        <item name="android:colorBackground">@color/panel_background</item>
+        <item name="android:statusBarColor">@color/panel_background</item>
+        <item name="android:navigationBarColor">@color/panel_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

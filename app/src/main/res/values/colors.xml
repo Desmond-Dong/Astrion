@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- layout_bg #0C0C0D — native near-black panel background, also used as
+         the window background so device detail pages never flash white. -->
+    <color name="panel_background">#FF0C0C0D</color>
+</resources>

@@ -1,5 +1,6 @@
 package com.example.astrion.ui.screens.panel
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +61,7 @@ import com.example.astrion.panel.PanelConfigStore
 import com.example.astrion.ui.DeviceDetail
 import com.example.astrion.ui.components.NativeSlider
 import com.example.astrion.ui.components.holdRepeat
+import com.example.astrion.ui.theme.RemoteBackground
 import com.example.astrion.ui.theme.RemoteColors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -301,6 +303,7 @@ private fun DetailScaffold(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(RemoteBackground)
             .padding(horizontal = 20.dp)
     ) {
         Row(

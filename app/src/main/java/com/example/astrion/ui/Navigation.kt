@@ -1,13 +1,17 @@
 package com.example.astrion.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.astrion.ui.screens.panel.DeviceDetailScreen
 import com.example.astrion.ui.screens.panel.PanelHomeScreen
+import com.example.astrion.ui.theme.RemoteBackground
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.Serializable
 
@@ -42,7 +46,13 @@ fun PanelNavHost(
         }
     }
 
-    NavHost(navController = navController, startDestination = Home) {
+    NavHost(
+        navController = navController,
+        startDestination = Home,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RemoteBackground)
+    ) {
         composable<Home> {
             PanelHomeScreen(navController)
         }
