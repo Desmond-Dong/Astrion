@@ -130,25 +130,21 @@ blueprint:
     light_key_device:
       name: 灯按键绑定的设备（可选）
       description: 默认绑到勾选的第一盏灯；也可指定同步到面板的任意一台设备
-      default: none
       selector:
         entity: {}
     cover_key_device:
       name: 窗帘按键绑定的设备（可选）
       description: 默认绑到勾选的第一台窗帘；也可指定任意一台设备
-      default: none
       selector:
         entity: {}
     media_key_device:
       name: 音乐按键绑定的设备（可选）
       description: 默认绑到勾选的第一台媒体播放器；也可指定任意一台设备
-      default: none
       selector:
         entity: {}
     climate_key_device:
       name: 空调按键绑定的设备（可选）
       description: 默认绑到勾选的第一台空调；也可指定任意一台设备
-      default: none
       selector:
         entity: {}
     key_bindings_entity:
@@ -239,35 +235,34 @@ variables:
        + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
        + (valve_entities or []) + (vacuum_entities or []) }}
   key_bindings_text: >-
-    {% set auto = [] %}
-    {% for key, domain in [(134, 'light'), (135, 'cover'), (136, 'media_player'), (137, 'climate')] %}
+    {% set ns = namespace(auto=[], manual=[]) %}
+    {% for key, domain in [[134, 'light'], [135, 'cover'], [136, 'media_player'], [137, 'climate']] %}
       {% set es = all_entities | select('match', '^' ~ domain ~ '\\.') | list %}
       {% if es | count > 0 %}
-        {% set auto = auto + [key ~ '=' ~ (es | first)] %}
+        {% set ns.auto = ns.auto + [key ~ '=' ~ (es | first)] %}
       {% endif %}
     {% endfor %}
-    {% set manual = [] %}
     {% if light_key_device %}
-      {% set manual = manual + ['134=' ~ light_key_device] %}
+      {% set ns.manual = ns.manual + ['134=' ~ light_key_device] %}
     {% endif %}
     {% if cover_key_device %}
-      {% set manual = manual + ['135=' ~ cover_key_device] %}
+      {% set ns.manual = ns.manual + ['135=' ~ cover_key_device] %}
     {% endif %}
     {% if media_key_device %}
-      {% set manual = manual + ['136=' ~ media_key_device] %}
+      {% set ns.manual = ns.manual + ['136=' ~ media_key_device] %}
     {% endif %}
     {% if climate_key_device %}
-      {% set manual = manual + ['137=' ~ climate_key_device] %}
+      {% set ns.manual = ns.manual + ['137=' ~ climate_key_device] %}
     {% endif %}
-    {% set merged = auto %}
-    {% for m in manual %}
-      {% set merged = merged | reject('match', '^' ~ (m.split('='))[0] ~ '=') | list %}
-      {% set merged = merged + [m] %}
+    {% set ns.merged = ns.auto %}
+    {% for m in ns.manual %}
+      {% set ns.merged = ns.merged | reject('match', '^' ~ (m.split('='))[0] ~ '=') | list %}
+      {% set ns.merged = ns.merged + [m] %}
     {% endfor %}
     {% if custom_key_bindings and custom_key_bindings | length > 0 %}
       {{ custom_key_bindings }}
     {% else %}
-      {{ merged | join(';') }}
+      {{ ns.merged | join(';') }}
     {% endif %}
   layout_json: >-
     {% set ns = namespace(by_area={}, sync=[]) %}
