@@ -72,7 +72,7 @@ class ScreensaverController @Inject constructor(
     private var chargingScreenOff = false
 
     @Volatile
-    private var charging = false
+    private var chargingNow = false
 
     /** System brightness before the screen-off dim, restored on wake. */
     private var previousBrightness = 0
@@ -119,10 +119,10 @@ class ScreensaverController @Inject constructor(
 
     /** Reports the current charging state (drives the 充电熄屏 behaviour). */
     fun setCharging(value: Boolean) {
-        if (charging == value) return
+        if (chargingNow == value) return
         _charging.value = value
         Timber.d("Charging state changed: $value (mode=${if (chargingScreenOff) "熄屏" else "屏保"})")
-        charging = value
+        chargingNow = value
         if (!value) endScreenOff()
     }
 
@@ -143,7 +143,7 @@ class ScreensaverController @Inject constructor(
         val idleReached = timeout > 0 && idleMs >= timeout * 1000L
 
         // 充电熄屏模式：空闲即熄（屏保已显示时也允许切到熄屏）
-        if (charging && chargingScreenOff) {
+        if (chargingNow && chargingScreenOff) {
             if (!idleReached) {
                 endScreenOff()
                 return
