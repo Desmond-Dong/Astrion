@@ -137,10 +137,34 @@ class CardController @Inject constructor(
             mapOf("entity_id" to entityId, "hvac_mode" to mode)
         )
 
+    suspend fun climateSetPresetMode(entityId: String, preset: String) =
+        haActionBus.callService(
+            "climate.set_preset_mode",
+            mapOf("entity_id" to entityId, "preset_mode" to preset)
+        )
+
+    suspend fun climateSetTemperatureRange(entityId: String, low: Double, high: Double) {
+        if (low >= high) return
+        haActionBus.callService(
+            "climate.set_temperature",
+            mapOf(
+                "entity_id" to entityId,
+                "target_temp_low" to formatNumber(low),
+                "target_temp_high" to formatNumber(high)
+            )
+        )
+    }
+
     suspend fun climateSetFanMode(entityId: String, mode: String) =
         haActionBus.callService(
             "climate.set_fan_mode",
             mapOf("entity_id" to entityId, "fan_mode" to mode)
+        )
+
+    suspend fun lightEffect(entityId: String, effect: String) =
+        haActionBus.callService(
+            "light.turn_on",
+            mapOf("entity_id" to entityId, "effect" to effect)
         )
 
     // ── Fan ─────────────────────────────────────────────────────────────
@@ -168,6 +192,12 @@ class CardController @Inject constructor(
             mapOf("entity_id" to entityId, "position" to position.coerceIn(0, 100).toString())
         )
 
+    suspend fun coverSetTiltPosition(entityId: String, tilt: Int) =
+        haActionBus.callService(
+            "cover.set_cover_tilt_position",
+            mapOf("entity_id" to entityId, "tilt_position" to tilt.coerceIn(0, 100).toString())
+        )
+
     // ── Media player entity ─────────────────────────────────────────────
 
     suspend fun mediaCommand(entityId: String, command: String) =
@@ -179,20 +209,78 @@ class CardController @Inject constructor(
             mapOf("entity_id" to entityId, "volume_level" to level.coerceIn(0f, 1f).toString())
         )
 
+    suspend fun mediaSeek(entityId: String, positionSec: Int) =
+        haActionBus.callService(
+            "media_player.media_seek",
+            mapOf("entity_id" to entityId, "seek_position" to positionSec.coerceAtLeast(0).toString())
+        )
+
+    suspend fun mediaPlayMedia(entityId: String, contentId: String) =
+        haActionBus.callService(
+            "media_player.play_media",
+            mapOf(
+                "entity_id" to entityId,
+                "media_content_type" to "favorite_item_id",
+                "media_content_id" to contentId
+            )
+        )
+
+    suspend fun mediaSelectSource(entityId: String, source: String) =
+        haActionBus.callService(
+            "media_player.select_source",
+            mapOf("entity_id" to entityId, "source" to source)
+        )
+
+    suspend fun mediaSelectSoundMode(entityId: String, soundMode: String) =
+        haActionBus.callService(
+            "media_player.select_sound_mode",
+            mapOf("entity_id" to entityId, "sound_mode" to soundMode)
+        )
+
+    /**
+     * 原版 MediaPlayCommandManager 状态机：OFF/STANDBY 先 turn_on 再 play，
+     * 其余状态直接 play/pause 切换。
+     */
+    suspend fun mediaTogglePlayback(entityId: String) {
+        val state = haStatesStore.states.value[entityId]?.state
+        if (state == "off" || state == "standby" || state == "unknown") {
+            mediaCommand(entityId, "turn_on")
+            mediaCommand(entityId, "media_play")
+        } else {
+            mediaCommand(entityId, "media_play_pause")
+        }
+    }
+
     // ── Dynamic physical key semantics (§3.10.4 物理键语义汇总) ─────────
 
     /**
      * Applies the original device-page physical key semantics: the same keys
-     * change meaning depending on the card type currently on screen.
+     * change meaning depending on the card type currently on screen. 短按
+     * ±1（温度 ±0.5），长按 ±5（原版 长按 400ms 起始 / 200ms 重复）。
      *
      * @return true when the key was consumed by this card.
      */
     suspend fun handleDeviceKey(card: PanelCard, keyCode: Int, longPress: Boolean): Boolean {
-        if (longPress) return false
+        if (longPress) {
+            return applyDeviceStep(card, keyCode, large = true)
+        }
+        return applyDeviceStep(card, keyCode, large = false)
+    }
+
+    /**
+     * 长按自动重复步进（原版 200ms 重复）。由设备详情页持有，按键松开
+     * （cancel 事件）后停止。
+     */
+    suspend fun holdDeviceStep(card: PanelCard, keyCode: Int) {
+        if (!applyDeviceStep(card, keyCode, large = true)) return
+    }
+
+    private suspend fun applyDeviceStep(card: PanelCard, keyCode: Int, large: Boolean): Boolean {
         val entityId = card.primaryEntity?.entityId ?: return false
         val state = haStatesStore.states.value[entityId]?.state
         return when (card.type) {
             PanelCardTypes.TV -> {
+                // 原版 TV 键：音量→media_player；频道→send_command；OK 等单键
                 when (keyCode) {
                     19 -> pressTvKey(card, "UP")
                     20 -> pressTvKey(card, "DOWN")
@@ -214,14 +302,13 @@ class CardController @Inject constructor(
             PanelCardTypes.CLIMATE -> {
                 val current = haStatesStore.states.value["$entityId.temperature"]
                     ?.state?.toDoubleOrNull()
-                val hvacOn = state != "off"
                 when (keyCode) {
                     24 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) + 0.5); true
+                        climateSetTemperature(entityId, (current ?: 24.0) + if (large) 1.0 else 0.5); true
                     }
 
                     25 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) - 0.5); true
+                        climateSetTemperature(entityId, (current ?: 24.0) - if (large) 1.0 else 0.5); true
                     }
 
                     92, 93 -> {
@@ -229,7 +316,10 @@ class CardController @Inject constructor(
                     }
 
                     132 -> {
-                        climateSetHvacMode(entityId, if (hvacOn) "off" else "cool"); true
+                        if (large) false
+                        else {
+                            climateSetHvacMode(entityId, if (state != "off") "off" else "cool"); true
+                        }
                     }
 
                     else -> false
@@ -241,15 +331,18 @@ class CardController @Inject constructor(
                     ?.state?.toFloatOrNull()
                 when (keyCode) {
                     24 -> {
-                        fanSetPercentage(entityId, ((percentage ?: 0f) + 20f).toInt()); true
+                        fanSetPercentage(entityId, ((percentage ?: 0f) + if (large) 5f else 1f).toInt()); true
                     }
 
                     25 -> {
-                        fanSetPercentage(entityId, ((percentage ?: 100f) - 20f).toInt()); true
+                        fanSetPercentage(entityId, ((percentage ?: 100f) - if (large) 5f else 1f).toInt()); true
                     }
 
                     132 -> {
-                        if (state == "on") turnOff(entityId) else turnOn(entityId); true
+                        if (large) false
+                        else {
+                            if (state == "on") turnOff(entityId) else turnOn(entityId); true
+                        }
                     }
 
                     else -> false
@@ -261,29 +354,38 @@ class CardController @Inject constructor(
                     ?.state?.toFloatOrNull()
                 when (keyCode) {
                     24 -> {
-                        lightTurnOn(entityId, brightnessPct = ((brightness ?: 0f) + 10f).toInt()); true
+                        lightTurnOn(entityId, brightnessPct = ((brightness ?: 0f) + if (large) 5f else 1f).toInt()); true
                     }
 
                     25 -> {
-                        lightTurnOn(entityId, brightnessPct = ((brightness ?: 100f) - 10f).toInt()); true
+                        lightTurnOn(entityId, brightnessPct = ((brightness ?: 100f) - if (large) 5f else 1f).toInt()); true
                     }
 
-                    // 色温 ±100K（原版 92/93=色温，仅灯支持色温时消费）
+                    // 色温 ±:短按 ±50K,长按 ±250K（原版 92/93=色温仅灯支持时消费）
                     92, 93 -> {
                         val kelvin = haStatesStore.states.value["$entityId.color_temp_kelvin"]
                             ?.state?.toIntOrNull()
                         if (kelvin == null) {
                             false
                         } else {
-                            val next = (kelvin + if (keyCode == 93) 100 else -100)
-                                .coerceIn(2000, 6500)
+                            val step = if (large) 250 else 50
+                            val next = (kelvin + if (keyCode == 93) step else -step)
+                                .coerceIn(
+                                    haStatesStore.states.value["$entityId.min_color_temp_kelvin"]
+                                        ?.state?.toIntOrNull() ?: 2000,
+                                    haStatesStore.states.value["$entityId.max_color_temp_kelvin"]
+                                        ?.state?.toIntOrNull() ?: 6500
+                                )
                             lightTurnOn(entityId, kelvin = next)
                             true
                         }
                     }
 
                     132 -> {
-                        if (state == "on") lightTurnOff(entityId) else lightTurnOn(entityId); true
+                        if (large) false
+                        else {
+                            if (state == "on") lightTurnOff(entityId) else lightTurnOn(entityId); true
+                        }
                     }
 
                     else -> false
@@ -291,9 +393,30 @@ class CardController @Inject constructor(
             }
 
             PanelCardTypes.COVER -> when (keyCode) {
+                24, 25 -> {
+                    // 位置步进：短按 ±1,长按 ±5（原版 窗帘 24/25）
+                    val position = haStatesStore.states.value["$entityId.current_position"]
+                        ?.state?.toIntOrNull()
+                    val step = if (large) 5 else 1
+                    coverSetPosition(entityId, (position ?: 50) + if (keyCode == 24) step else -step)
+                    true
+                }
+
+                92, 93 -> {
+                    // 翻转步进：92/93（原版 窗帘翻转）
+                    val tilt = haStatesStore.states.value["$entityId.current_tilt_position"]
+                        ?.state?.toIntOrNull()
+                    val step = if (large) 5 else 1
+                    coverSetTiltPosition(entityId, (tilt ?: 50) + if (keyCode == 92) step else -step)
+                    true
+                }
+
                 132 -> {
-                    // Toggle open/close on the power key, stop on OK (原版 ①⑤)
-                    if (state == "open") coverClose(entityId) else coverOpen(entityId); true
+                    if (large) false
+                    else {
+                        // Toggle open/close on the power key, stop on OK (原版 ①⑤)
+                        if (state == "open") coverClose(entityId) else coverOpen(entityId); true
+                    }
                 }
 
                 23 -> {
@@ -305,7 +428,7 @@ class CardController @Inject constructor(
 
             PanelCardTypes.MEDIA_PLAYER -> {
                 when (keyCode) {
-                    23 -> mediaCommand(entityId, "media_play_pause")
+                    23 -> mediaTogglePlayback(entityId)
                     24 -> mediaCommand(entityId, "volume_up")
                     25 -> mediaCommand(entityId, "volume_down")
                     92 -> mediaCommand(entityId, "media_previous_track")
@@ -322,7 +445,10 @@ class CardController @Inject constructor(
 
             PanelCardTypes.SWITCH, PanelCardTypes.SCENE -> when (keyCode) {
                 132 -> {
-                    if (state == "on") turnOff(entityId) else turnOn(entityId); true
+                    if (large) false
+                    else {
+                        if (state == "on") turnOff(entityId) else turnOn(entityId); true
+                    }
                 }
 
                 else -> false

@@ -58,7 +58,11 @@ class KeyRouter @Inject constructor(
 
     /** @return true when the key was consumed. */
     suspend fun dispatch(press: KeyPress): Boolean {
-        if (press.cancel) return true
+        if (press.cancel) {
+            // 长按松开：交给顶层页面停止自动重复步进；不被任何绑定消费
+            handler?.invoke(press)
+            return true
+        }
         // Every physical key is reported to Home Assistant so automations can
         // see (and bind) any key, even when the panel itself ignores it.
         eventHub.announceKeyPressed(press.keyCode, press.longPress)

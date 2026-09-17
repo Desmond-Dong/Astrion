@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     lateinit var otaUpdateManager: OtaUpdateManager
 
     private var pendingLongPress: Runnable? = null
+    private var longPressActive = false
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -120,10 +121,13 @@ class MainActivity : ComponentActivity() {
     // the panel is a dedicated appliance, keys never reach the system.
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (pendingLongPress == null) {
+        // 短按在 key-up 触发；长按 800ms 后在 key-down 触发（原版
+        // LONG_PRESS_TIMEOUT_MS）。长按期间忽略 KeyEvent 的系统重复事件。
+        if (!longPressActive && pendingLongPress == null) {
             val posted = Runnable {
                 pendingLongPress = null
-                dispatchKey(keyCode, longPress = true)
+                longPressActive = true
+                dispatchKey(keyCode, longPress = true, cancel = false)
             }
             pendingLongPress = posted
             window.decorView.postDelayed(posted, LONG_PRESS_TIMEOUT_MS)
@@ -136,19 +140,23 @@ class MainActivity : ComponentActivity() {
         if (posted != null) {
             window.decorView.removeCallbacks(posted)
             pendingLongPress = null
-            dispatchKey(keyCode, longPress = false)
+            dispatchKey(keyCode, longPress = false, cancel = false)
+        } else if (longPressActive) {
+            // 长按中松开：通知页面停止自动重复步进
+            longPressActive = false
+            dispatchKey(keyCode, longPress = true, cancel = true)
         }
         return true
     }
 
-    private fun dispatchKey(keyCode: Int, longPress: Boolean) {
+    private fun dispatchKey(keyCode: Int, longPress: Boolean, cancel: Boolean) {
         // Any key first dismisses the screensaver without acting (§3.10.7:
         // 屏保显示中任意按键即退出).
         val wasScreensaverActive = screensaverController.active.value
         screensaverController.onUserActivity()
         if (wasScreensaverActive) return
         lifecycleScope.launch {
-            keyRouter.dispatch(KeyPress(keyCode = keyCode, longPress = longPress))
+            keyRouter.dispatch(KeyPress(keyCode = keyCode, longPress = longPress, cancel = cancel))
         }
     }
 
