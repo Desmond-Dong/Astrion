@@ -40,6 +40,9 @@ import com.example.astrion.esphome.Connected
 import com.example.astrion.ui.theme.RemoteColors
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 
@@ -77,8 +80,13 @@ fun QuickSettingsPanel(
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 34.dp)
                 .background(RemoteColors.surface, RoundedCornerShape(18.dp))
-                .clickable(enabled = false) {}
+                // 面板本体消费点击，避免点空白处误触背景关闭；内容超高时滚动
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { }
                 .padding(18.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
