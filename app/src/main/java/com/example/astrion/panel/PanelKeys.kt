@@ -211,7 +211,7 @@ class KeyBindingExecutor @Inject constructor(
     }
 
     /** 绑定键的快捷动作：按设备类型与当前状态决定执行的服务。 */
-    private fun quickActionService(type: String, entityId: String, domain: String): String {
+    private suspend fun quickActionService(type: String, entityId: String, domain: String): String {
         val state = haStatesStore.states.value[entityId]?.state
         return when (type) {
             PanelCardTypes.MEDIA_PLAYER ->
