@@ -194,9 +194,38 @@ class KeyBindingExecutor @Inject constructor(
                 }
             }
 
-            else -> panelUiEvents.tryOpenCard(card.cardId)
+            else -> {
+                // 原版快捷键语义：所有绑定都是快捷操作，不再打开操控页
+                if (entityId != null) {
+                    val domain = entityId.substringBefore('.')
+                    haActionBus.callService(
+                        quickActionService(card.resolvedType, entityId, domain),
+                        mapOf("entity_id" to entityId)
+                    )
+                } else {
+                    panelUiEvents.tryOpenCard(card.cardId)
+                }
+            }
         }
         return true
+    }
+
+    /** 绑定键的快捷动作：按设备类型与当前状态决定执行的服务。 */
+    private fun quickActionService(type: String, entityId: String, domain: String): String {
+        val state = haStatesStore.states.value[entityId]?.state
+        return when (type) {
+            PanelCardTypes.MEDIA_PLAYER ->
+                if (state == "playing") "media_player.media_pause" else "media_player.media_play"
+
+            PanelCardTypes.COVER ->
+                if (state == "open") "cover.close_cover" else "cover.open_cover"
+
+            PanelCardTypes.CLIMATE ->
+                if (state != "off" && state != "unavailable") "climate.turn_off"
+                else "climate.turn_on"
+
+            else -> defaultToggleService(entityId, domain)
+        }
     }
 
     /** Toggles on/off domains based on the imported HA state. */
