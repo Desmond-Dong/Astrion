@@ -524,8 +524,8 @@ private fun DeviceCard(
     stateText: String,
     onClick: () -> Unit,
 ) {
-    // 原版 index_device_*_item：纯黑底、居中 50dp 原版彩色状态图标
-    // (alpha 0.8)、下方灰名、左侧小白点表示开启。
+    // 原版 index_device_*_item：无卡片盒子，居中 50dp 原版彩色状态图标
+    // (alpha 0.8) + 下方 #BFBDBD 名称 + 左侧 4dp 白点表示开机。
     val isOn = stateText.contains("开启") || stateText.contains("打开") ||
         stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
     val isOffline = stateText.contains("不可用") || stateText.contains("unavailable")
@@ -541,7 +541,6 @@ private fun DeviceCard(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 原版 PNG 是白/彩色透明底位图，不能被 Icon 默认着色
             Icon(
                 painter = painterResource(iconRes),
                 contentDescription = card.resolvedType,
@@ -593,21 +592,6 @@ private fun DeviceCard(
             }
         }
     }
-}
-
-/** 原版两态图标：开=彩色 on 图标，关=灰色 off 图标。 */
-private fun stateIconRes(type: String, isOn: Boolean): Int {
-    val pair = when (type) {
-        PanelCardTypes.LIGHT -> R.drawable.ic_state_light_on to R.drawable.ic_state_light_off
-        PanelCardTypes.CLIMATE -> R.drawable.ic_state_climate_on to R.drawable.ic_state_climate_off
-        PanelCardTypes.COVER -> R.drawable.ic_state_cover_on to R.drawable.ic_state_cover_off
-        PanelCardTypes.FAN -> R.drawable.ic_state_fan_on to R.drawable.ic_state_fan_off
-        PanelCardTypes.MEDIA_PLAYER -> R.drawable.ic_state_media_on to R.drawable.ic_state_media_off
-        PanelCardTypes.SWITCH -> R.drawable.ic_state_switch_on to R.drawable.ic_state_switch_off
-        PanelCardTypes.TV -> R.drawable.ic_state_tv_on to R.drawable.ic_state_tv_off
-        else -> R.drawable.ic_state_default to R.drawable.ic_state_default
-    }
-    return if (isOn) pair.first else pair.second
 }
 
 @Composable

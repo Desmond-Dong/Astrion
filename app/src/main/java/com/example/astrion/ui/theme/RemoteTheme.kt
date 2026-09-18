@@ -13,56 +13,28 @@ import androidx.compose.ui.graphics.Color
  * It stays dark regardless of the system setting.
  */
 object RemoteColors {
-    /** layout_bg #0C0C0D — the native near-black home background. */
+    // 原版官方配色（colors.xml 提取）：layout_bg #0C0C0D、
+    // device_button #2B2B2B、text_device_item_name #BFBDBD、
+    // text_universal_gold #BDA67A、device_on_line #27D343、text_red #F1453C
     val backgroundTop = Color(0xFF0C0C0D)
     val backgroundBottom = Color(0xFF0C0C0D)
-
-    /** universal_item_background_selected #17171A — dark gray panel/card. */
-    val surface = Color(0xFF17171A)
-
-    /** view_default_bg #2B2B2E — elevated panel / key area. */
-    val surfaceVariant = Color(0xFF2B2B2E)
-
-    /** text_universal_gold #BDA67A — brand gold accent (buttons/save/OTA/voice). */
+    val surface = Color(0xFF161618)
+    val surfaceVariant = Color(0xFF2B2B2B)
     val accent = Color(0xFFBDA67A)
-
-    /** item_device_on_background #32281D — warm surface used while a device is ON. */
-    val accentContainer = Color(0xFF32281D)
-
-    /** text_default_white #F6F6F6 — primary text. */
-    val onSurface = Color(0xFFF6F6F6)
-
-    /** text_device_item_name #BFBDBD — secondary text / device row names. */
+    val accentContainer = Color(0xFF2B2B2B)
+    val onSurface = Color(0xFFFFFFFF)
     val onSurfaceVariant = Color(0xFFBFBDBD)
-
-    /** divider #303030 — hairline separators. */
-    val outline = Color(0xFF303030)
-
-    /** device_on_line #27D343 — online / ON indicator green. */
+    val outline = Color(0xFF3A3A3C)
     val secondary = Color(0xFF27D343)
-
-    /** text_red #F1453C — offline / errors. */
     val error = Color(0xFFF1453C)
-
-    /** device_button_background_unselected #2B2B2B — idle remote key. */
     val key = Color(0xFF2B2B2B)
-
-    /** device_button_background_selected #808080 — focused/selected remote key. */
     val keyPressed = Color(0xFF808080)
-
-    /** device_button_focuses_onclick_border #FF9800 — focus ring orange. */
-    val warning = Color(0xFFFF9800)
-
-    /** Native accent palette extras. */
-    val deviceOn = Color(0xFF32281D)
-    val roomName = Color(0xE6CCCBCB)
+    val deviceOn = Color(0xFF282828)
     val hintText = Color(0x80B0B0B0)
+    val topBarText = Color(0xFFFFFFFF)
+    val roomName = Color(0xFFCCCCCC)
+    val popupBackground = Color(0xFF2B2B2B)
     val wifiHint = Color(0xFF8C7B5B)
-    val topBarText = Color(0xCCFFFFFF)
-    val popupBackground = Color(0x9B040404)
-    val popupLine = Color(0xFF2F2F36)
-    val rowSeparator = Color(0xFF242425)
-    val dot = Color(0xFF4A4A4C)
 }
 
 val RemoteBackground = Brush.verticalGradient(
