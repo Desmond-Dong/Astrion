@@ -2,6 +2,7 @@ package com.example.astrion.ui.screens.panel
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,15 +47,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -1708,7 +1714,17 @@ private fun FanContent(
 
 
 
-// ── Cover (§3.10.4 ⑤⑥⑦) ───────────────────────────────────────────────
+// ── Cover / 窗帘 (§3.10.4 ⑤⑥⑦) — 原版 activity_device_curtain.xml ──────
+//
+// 布局（原版 dp 值）：CurtainView 300×250dp 居中（marginTop 100→此处 40）；
+// 百分比文字 30sp 白色（marginTop 20，"X%" 格式）；底部按钮行（marginTop 25、
+// 下边距 20）：打开 70×70dp（左右边距 16）/ 停止 70×70dp 居中 / 关闭 70×70dp，
+// 50dp 图标居中；到位时对应按钮盖遮罩并禁用。
+//
+// 逻辑（原版 CurtainActivity + CurtainView）：拖动实时更新百分比文字，松手
+// 300ms 防抖后 cover.set_cover_position 并阻塞状态回写 30s（preventUiUpdates）；
+// 开/停/关按钮 300ms 防抖下发；位置 100% 禁开、0% 禁关；
+// 物理键 132=开/关切换、23=停止（原版 keyControl0penOrClose / keyControlStop）。
 
 @Composable
 private fun CoverContent(
@@ -1718,57 +1734,114 @@ private fun CoverContent(
 ) {
     val state = stateOf(card, haStates) ?: "closed"
     val position = stateOf(card, haStates, "current_position")?.toFloatOrNull()
-    val tilt = stateOf(card, haStates, "current_tilt_position")?.toFloatOrNull()
-    val supportsTilt = tilt != null
+    val supportsTilt = stateOf(card, haStates, "current_tilt_position") != null
+
+    val scope = rememberCoroutineScope()
+
+    // 拖动中的实时值；松手后 300ms 防抖下发并阻塞回写 30s
+    var dragOpen by remember { mutableStateOf<Int?>(null) }
+    var pendingSend by remember { mutableStateOf<Int?>(null) }
+    var blockUntil by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(pendingSend) {
+        val target = pendingSend
+        if (target != null) {
+            delay(300) // 原版 mPositionDebounceRunnable 300ms
+            pendingSend = null
+            blockUntil = System.currentTimeMillis() + 30000L // 原版 preventUiUpdates 30s
+            viewModel.coverPosition(target)
+        }
+    }
+
+    val attrOpen = position?.toInt() ?: when (state) {
+        "open" -> 100
+        "closed" -> 0
+        else -> null
+    }
+    val displayOpen = dragOpen
+        ?: pendingSend?.takeIf { System.currentTimeMillis() < blockUntil }
+        ?: attrOpen
+
+    // 原版 sendCurtainControl：控制命令 300ms 防抖
+    var controlJob by remember { mutableStateOf<Job?>(null) }
+    fun sendControl(command: suspend () -> Unit) {
+        controlJob?.cancel()
+        controlJob = scope.launch {
+            delay(300)
+            blockUntil = 0
+            command()
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = if (position != null) "打开 $position%" else when (state) {
-                "open" -> "打开"
-                "closed" -> "关闭"
-                "opening" -> "打开中…"
-                "closing" -> "关闭中…"
-                else -> state
-            },
-            fontSize = 28.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = RemoteColors.onSurface
+        Spacer(Modifier.height(40.dp))
+
+        // 原版 CurtainView：300×250dp 可拖动窗帘轨道
+        CurtainDragView(
+            open = displayOpen,
+            enabled = position != null,
+            onDrag = { open -> dragOpen = open }, // 原版 onPercentageChanged：仅更新显示
+            onRelease = { open -> // 原版 onStopTrackingTouch
+                dragOpen = null
+                if (open != attrOpen) pendingSend = open
+            }
         )
 
-        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            RemoteKey(label = "打开", size = 76, onClick = { viewModel.coverOpen() })
-            RemoteKey(label = "停止", size = 76, onClick = { viewModel.coverStop() })
-            RemoteKey(label = "关闭", size = 76, onClick = { viewModel.coverClose() })
+        // 原版 tvCurtainTrackPercentage：30sp 白色，marginTop 20，"%s%%"
+        Text(
+            text = "${displayOpen ?: 0}%",
+            fontSize = 30.sp,
+            color = RemoteColors.onSurface,
+            modifier = Modifier.padding(top = 20.dp)
+        )
+
+        Spacer(Modifier.height(25.dp))
+
+        // 原版底部按钮行：打开 / 停止 / 关闭，各 70×70dp
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            CurtainButton(
+                label = "打开",
+                enabled = (displayOpen ?: 0) < 100, // 原版 100% 禁开 + 遮罩
+                onClick = { sendControl { viewModel.coverOpen() } }
+            )
+            Spacer(Modifier.weight(1f))
+            CurtainButton(
+                label = "停止",
+                enabled = true,
+                onClick = { sendControl { viewModel.coverStop() } }
+            )
+            Spacer(Modifier.weight(1f))
+            CurtainButton(
+                label = "关闭",
+                enabled = (displayOpen ?: 0) > 0, // 原版 0% 禁关 + 遮罩
+                onClick = { sendControl { viewModel.coverClose() } }
+            )
         }
 
-        if (position != null) {
-            val positionDisplay = remember(position) { mutableStateOf(position) }
-            val positionThrottle = rememberValueThrottle<Float>(
-                send = { v -> viewModel.coverPosition(v.toInt()) },
-                intervalMs = 100
-            )
-            Text("位置", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            NativeSlider(
-                value = positionDisplay.value,
-                onDrag = { v ->
-                    positionDisplay.value = v
-                    positionThrottle.onDrag(v)
-                },
-                onCommit = { v ->
-                    positionDisplay.value = v
-                    positionThrottle.onCommit(v)
-                },
-                valueRange = 0f..100f
-            )
-        }
+        Spacer(Modifier.height(20.dp)) // 原版 marginBottom 20
 
+        InfoLine(
+            when (state) {
+                "opening" -> "打开中…"
+                "closing" -> "关闭中…"
+                else -> ""
+            }
+        )
+
+        // 翻转叶片（原版为独立百叶窗页 CurtainBlindsActivity，此处按需追加）
         if (supportsTilt) {
-            val tiltDisplay = remember(tilt) { mutableStateOf(tilt ?: 50f) }
+            val tilt = stateOf(card, haStates, "current_tilt_position")?.toFloatOrNull() ?: 50f
+            val tiltDisplay = remember(tilt) { mutableStateOf(tilt) }
             val tiltThrottle = rememberValueThrottle<Float>(
                 send = { v -> viewModel.coverTilt(v.toInt()) },
                 intervalMs = 100
@@ -1789,6 +1862,136 @@ private fun CoverContent(
         }
     }
 }
+
+/**
+ * 原版 CurtainView 复刻：300×250dp，浅灰轨道线（0xFFDBDADA），帘布左锚定、
+ * 拖动手柄改变帘布覆盖 → 开度 = 100 - 覆盖比例。拖动中只回调显示值，
+ * 松手回调一次提交值（原版 onPercentageChanged / onStopTrackingTouch）。
+ */
+@Composable
+private fun CurtainDragView(
+    open: Int?,
+    enabled: Boolean,
+    onDrag: (Int) -> Unit,
+    onRelease: (Int) -> Unit,
+) {
+    var widthPx by remember { mutableStateOf(0) }
+    val density = LocalDensity.current
+    val handleSize = with(density) { 44.dp.toPx() }
+    val sliderHalf = handleSize / 2f
+
+    // 手柄中心 x ↔ 开度换算（原版 setPercentage / drawCanvas 的映射）
+    fun handleXFor(openPct: Int): Float {
+        val track = (widthPx - sliderHalf).coerceAtLeast(1f)
+        return sliderHalf + (1f - openPct.coerceIn(0, 100) / 100f) * track
+    }
+
+    fun openFor(handleX: Float): Int {
+        val track = (widthPx - sliderHalf).coerceAtLeast(1f)
+        val f = ((handleX - sliderHalf) / track).coerceIn(0f, 1f)
+        return (100 - Math.round(f * 100)).coerceIn(0, 100)
+    }
+
+    var handleX by remember { mutableStateOf<Float?>(null) }
+    val currentHandle = handleX ?: open?.let { handleXFor(it) } ?: sliderHalf
+
+    Box(
+        modifier = Modifier
+            .size(width = 300.dp, height = 250.dp)
+            .onSizeChanged { widthPx = it.width }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var last = openFor(down.position.x.coerceIn(0f, size.width.toFloat()))
+                    onDrag(last)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) {
+                            onRelease(last)
+                            handleX = null // 松手后跟随状态值（阻塞期由 pendingSend 承接）
+                            change.consume()
+                            break
+                        }
+                        if (change.position != change.previousPosition) {
+                            val x = change.position.x.coerceIn(0f, size.width.toFloat())
+                            handleX = x
+                            last = openFor(x)
+                            onDrag(last)
+                        }
+                        change.consume()
+                    }
+                }
+            }
+    ) {
+        // 轨道线（原版 mTopPaint：浅灰粗线，圆帽）
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawLine(
+                color = Color(0xFFDBDADA),
+                start = Offset(sliderHalf / 2f, 4.dp.toPx()),
+                end = Offset(size.width - sliderHalf / 2f, 4.dp.toPx()),
+                strokeWidth = 4.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+        }
+        // 帘布：左锚定到当前手柄处（原版 mScreening 帘布位图）
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (currentHandle - handleSize).toInt().coerceAtLeast(0),
+                        3.dp.roundToPx()
+                    )
+                }
+                .width(with(density) { currentHandle.coerceAtLeast(0f).toDp() })
+                .height(with(density) { 250.dp.toPx() - 10.dp.toPx() }.toDp())
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF3A3A3C), Color(0xFF232325))
+                    )
+                )
+        )
+        // 拖动手柄（原版 mSlider 滑块图标，位于帘布右缘）
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (currentHandle - sliderHalf).toInt().coerceAtLeast(0),
+                        (125).dp.roundToPx() - (handleSize / 2f).toInt()
+                    )
+                }
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFDBDADA))
+                .border(3.dp, Color(0xFF2B2B2B), CircleShape)
+        )
+    }
+}
+
+/** 原版窗帘按钮：70×70dp 圆角底 + 50dp 图标；禁用时压暗（到位遮罩语义）。 */
+@Composable
+private fun CurtainButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = RemoteColors.key,
+        modifier = Modifier
+            .size(70.dp)
+            .alpha(if (enabled) 1f else 0.35f)
+            .clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(text = label, fontSize = 18.sp, color = RemoteColors.onSurface)
+        }
+    }
+}
+
+
 
 // ── Media player (§3.10.4 ⑫) ───────────────────────────────────────────
 
