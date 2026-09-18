@@ -2,11 +2,15 @@ package com.example.astrion.ui.screens.panel
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,8 +27,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,9 +39,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -71,6 +80,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /** 物理键长按自动重复（原版 200ms 间隔）。 */
@@ -84,6 +94,121 @@ private class ValueThrottle<T>(
     val onDrag: (T) -> Unit,
     val onCommit: (T) -> Unit,
 )
+
+/**
+ * 加速长按（原版 AcControlView TEMP_INTERVAL=300ms / tempStepCount）：
+ * 按下立即触发一次 onStep(0)，保持期间每 [intervalMs] 再触发一次，
+ * tick 逐次递增（原版每 300ms 步长累加一步，越按越快）。
+ */
+private fun Modifier.acceleratingPress(
+    intervalMs: Long = 300,
+    onStep: (tick: Int) -> Unit,
+): Modifier = composed {
+    val currentStep by rememberUpdatedState(onStep)
+    pointerInput(intervalMs) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            currentStep(0)
+            var tick = 0
+            while (true) {
+                val released = withTimeoutOrNull(intervalMs) { waitForUpOrCancellation() }
+                if (released != null) break
+                tick++
+                currentStep(tick)
+            }
+        }
+    }
+}
+
+/**
+ * 原版 ImageSwitchView：60×60dp 圆形电源开关（marginTop 10dp，居中），
+ * 图标取 ic_state_*（原版 icon_device_open / icon_device_closed）。
+ */
+@Composable
+private fun DevicePowerSwitch(
+    isOn: Boolean,
+    onRes: Int,
+    offRes: Int,
+    enabled: Boolean = true,
+    onToggle: (Boolean) -> Unit,
+) {
+    Surface(
+        shape = CircleShape,
+        color = RemoteColors.key,
+        modifier = Modifier
+            .padding(top = 10.dp)
+            .size(60.dp)
+            .alpha(if (enabled) 1f else 0.5f)
+            .clickable(enabled = enabled) { onToggle(!isOn) }
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(if (isOn) onRes else offRes),
+                contentDescription = if (isOn) "关闭" else "打开",
+                tint = if (isOn) RemoteColors.accent else RemoteColors.onSurfaceVariant,
+                modifier = Modifier.size(40.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 原版 AcOptionSelectPopup（popup_ac_mode_select_view.xml）：底部弹出选项列表，
+ * 背景popup_bg #2B2B2B，当前项高亮（原版金色 #BDA67A），点外部关闭。
+ */
+@Composable
+private fun OptionPopup(
+    title: String,
+    options: List<Pair<String, String>>,
+    selected: String?,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(onClick = onDismiss)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            color = RemoteColors.popupBackground,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .clickable(onClick = {})
+        ) {
+            Column {
+                Text(
+                    text = title,
+                    color = RemoteColors.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp)
+                )
+                options.forEach { (value, label) ->
+                    val isSelected = value == selected
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(value) }
+                            .padding(horizontal = 20.dp, vertical = 14.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (isSelected) RemoteColors.accent else RemoteColors.onSurface,
+                            fontSize = 18.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isSelected) {
+                            Text(text = "✓", color = RemoteColors.accent, fontSize = 18.sp)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+    }
+}
 
 @Composable
 private fun <T> rememberValueThrottle(
@@ -370,6 +495,35 @@ private fun RemoteKey(
     }
 }
 
+/** 原版 item_round_bg 圆形按钮（60×60dp 圆底，禁用时 alpha 0.5，原版 setControlEnabled）。 */
+@Composable
+private fun RoundIconButton(
+    size: Int,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = CircleShape,
+        color = RemoteColors.key,
+        modifier = Modifier
+            .size(size.dp)
+            .alpha(if (enabled) 1f else 0.5f)
+            .clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                color = RemoteColors.onSurface,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 2
+            )
+        }
+    }
+}
+
 @Composable
 private fun InfoLine(text: String) {
     Text(
@@ -511,7 +665,22 @@ private fun NumberPadDialog(
     )
 }
 
-// ── Climate (§3.10.4 ①) ────────────────────────────────────────────────
+// ── Climate (§3.10.4 ①) — 原版 activity_device_ac.xml + AcControlView ──
+//
+// 布局（原版 dp 值）：顶部 60×60dp 圆形电源开关（marginTop 10）；中部 200dp 面板：
+// 降/升温按钮 85×175dp（水平边距 20dp，圆角底、40dp 符号居中），温度文本区
+// 100×110dp 居中（70sp 粗体温度 + 度数符号，当前温度 13sp #A5A5A5）；
+// heat_cool 模式改为当前温度（95dp 高）+ 双目标按钮 100×48dp（水平间距 45dp）；
+// 底部 60dp 高一行三个 60×60dp 圆钮（模式/风速/预设，padding 3dp，marginTop 50）。
+//
+// 逻辑（原版 AcControlView）：温度步进 step（target_temp_step，默认 1.0），
+// 按下立即下发一次，长按每 300ms 一次且步长按 tick 加速；每次变化立即发
+// climate.set_temperature，3s 内不跟随 HA 状态回写（UserOverrideWindowManager）；
+// 电源切换带模式记忆（关机前缓存 hvac 模式，开机恢复，无缓存回落 cool）；
+// 模式/风速/预设为底部弹窗选择（AcOptionSelectPopup）；
+// heat_cool 用范围温度弹窗（AcTemperatureRangePopup：low ∈ [min, high-step]，
+// high ∈ [low+step, max]，每次调整立即下发）；
+// 物理键：24/25=温度±（300ms 加速）、92/93=风速循环、132=电源、164=回主页。
 
 @Composable
 private fun ClimateContent(
@@ -520,140 +689,404 @@ private fun ClimateContent(
     viewModel: DeviceDetailViewModel,
 ) {
     val state = stateOf(card, haStates) ?: "unavailable"
-    val isOn = state != "off"
-    val target = stateOf(card, haStates, "temperature")?.toDoubleOrNull()
+    val isRange = state == "heat_cool"
+    val available = state != "unavailable"
+    val isOn = available && state != "off"
     val minT = stateOf(card, haStates, "min_temp")?.toDoubleOrNull() ?: 16.0
     val maxT = stateOf(card, haStates, "max_temp")?.toDoubleOrNull() ?: 30.0
-    val fanMode = stateOf(card, haStates, "fan_mode")
-    val presetMode = stateOf(card, haStates, "preset_mode")
-    val presetModes = attrList(card, haStates, "preset_modes")
+    val stepT = stateOf(card, haStates, "target_temp_step")?.toDoubleOrNull()
+        ?.takeIf { it > 0.0 } ?: 1.0
+    val attrTemp = stateOf(card, haStates, "temperature")?.toDoubleOrNull()
+    val currentTemp = stateOf(card, haStates, "current_temperature")?.toDoubleOrNull()
+    val rangeLow = stateOf(card, haStates, "target_temp_low")?.toDoubleOrNull()
+    val rangeHigh = stateOf(card, haStates, "target_temp_high")?.toDoubleOrNull()
+    val hvacModes = attrList(card, haStates, "hvac_modes").filter { it != "off" }
     val fanModes = attrList(card, haStates, "fan_modes")
-    val isRange = state == "heat_cool"
-    val low = stateOf(card, haStates, "target_temp_low")?.toDoubleOrNull()
-    val high = stateOf(card, haStates, "target_temp_high")?.toDoubleOrNull()
+    val fanMode = stateOf(card, haStates, "fan_mode")
+    val presetModes = attrList(card, haStates, "preset_modes")
+    val presetMode = stateOf(card, haStates, "preset_mode")
 
-    val current = target ?: if (isRange) ((low ?: minT) + (high ?: maxT)) / 2 else 24.0
+    // 用户覆盖窗口（原版 3s）：操作后 3s 内 UI 显示本地 pending 值
+    var pendingTemp by remember { mutableStateOf<Double?>(null) }
+    LaunchedEffect(pendingTemp) {
+        if (pendingTemp != null) {
+            delay(3000)
+            pendingTemp = null
+        }
+    }
+
+    // 原版电源记忆逻辑：非关机状态缓存模式，开机时恢复
+    var cachedMode by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state) { if (isOn) cachedMode = state }
+
+    var showModePopup by remember { mutableStateOf(false) }
+    var showFanPopup by remember { mutableStateOf(false) }
+    var showPresetPopup by remember { mutableStateOf(false) }
+    var rangeTarget by remember { mutableStateOf<Int?>(null) } // 0=低(制热) 1=高(制冷)
+
+    val displayTemp = pendingTemp ?: attrTemp ?: ((minT + maxT) / 2.0)
+
+    // 原版 addTempWithStep / reduceTempWithStep：round(±max(step, gestureStep))，
+    // 加速期 gestureStep = (tick+1)*step，夹在 [min, max]，无变化不发送
+    fun stepTemp(dir: Int, tick: Int) {
+        if (!available || isRange) return
+        val gesture = stepT * (tick + 1)
+        val raw = displayTemp + dir * maxOf(stepT, gesture)
+        val next = (Math.round(raw * 10) / 10.0).coerceIn(minT, maxT)
+        if (next != displayTemp) {
+            pendingTemp = next
+            viewModel.setTemperature(next)
+        }
+    }
+
+    fun togglePower() {
+        if (!available) return
+        if (isOn) {
+            viewModel.setHvacMode("off")
+        } else {
+            val resume = cachedMode?.takeIf { it != "off" && it != "unavailable" } ?: "cool"
+            viewModel.setHvacMode(resume)
+        }
+    }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        val alpha = if (isOn) 1f else 0.5f
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // 原版 imgSwitchView：60×60dp 电源开关，marginTop 10
+        DevicePowerSwitch(
+            isOn = isOn,
+            onRes = R.drawable.ic_state_climate_on,
+            offRes = R.drawable.ic_state_climate_off,
+            enabled = available,
+            onToggle = { togglePower() }
+        )
+
+        Spacer(Modifier.height(30.dp)) // 原版 rlPanel0 marginTop 30
+
+        // rlPanel1：200dp 高的温度面板
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "${formatTemp(current)}℃",
-                fontSize = 56.sp,
-                fontWeight = FontWeight.Bold,
-                color = RemoteColors.onSurface,
-                modifier = Modifier.alpha(alpha)
+            // rlAcTempAddReduce：85×175dp，marginLeft 20
+            TemperatureSideButton(
+                symbol = "−",
+                enabled = available && !isRange,
+                onStep = { tick -> stepTemp(-1, tick) },
+                modifier = Modifier.padding(start = 20.dp)
             )
-            InfoLine(
-                text = listOfNotNull(
-                    translateOnOff(state),
-                    stateOf(card, haStates, "current_temperature")
-                        ?.toDoubleOrNull()?.let { "当前 ${formatTemp(it)}℃" }
-                ).joinToString(" · ")
-            )
-        }
-
-        // 温度滑条（原版 ViewAcTemperatureSlider：拖动节流、松手精确发送）
-        val tempDisplay = remember(current) { mutableStateOf(current.toFloat()) }
-        val tempThrottle = rememberValueThrottle<Float>(
-            send = { v -> viewModel.setTemperature(v.toDouble()) },
-            intervalMs = 300
-        )
-        Text("目标温度", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-        NativeSlider(
-            value = tempDisplay.value,
-            onDrag = { v ->
-                tempDisplay.value = v
-                tempThrottle.onDrag(v)
-            },
-            onCommit = { v ->
-                tempDisplay.value = v
-                tempThrottle.onCommit(v)
-            },
-            valueRange = minT.toFloat()..maxT.toFloat(),
-            enabled = isOn
-        )
-
-        if (isRange) {
-            // 双温区（heat_cool → target_temp_low/high，原版 low<high 护栏）
-            val lowDisplay = remember(low, high) { mutableStateOf((low ?: minT).toFloat()) }
-            val highDisplay = remember(high, low) { mutableStateOf((high ?: maxT).toFloat()) }
-            val rangeThrottle = rememberValueThrottle<Pair<Float, Float>>(
-                send = { (l, h) -> viewModel.setTemperatureRange(l.toDouble(), h.toDouble()) },
-                intervalMs = 300
-            )
-            Text("冷却温度下限", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            NativeSlider(
-                value = lowDisplay.value,
-                onDrag = { v ->
-                    lowDisplay.value = v
-                    rangeThrottle.onDrag(v.coerceAtMost(highDisplay.value - 1f) to highDisplay.value)
-                },
-                onCommit = { v ->
-                    val l = v.coerceAtMost(highDisplay.value - 1f)
-                    lowDisplay.value = l
-                    rangeThrottle.onCommit(l to highDisplay.value)
-                },
-                valueRange = minT.toFloat()..maxT.toFloat(),
-                enabled = isOn
-            )
-            Text("加热温度上限", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            NativeSlider(
-                value = highDisplay.value,
-                onDrag = { v ->
-                    highDisplay.value = v
-                    rangeThrottle.onDrag(lowDisplay.value to v.coerceAtLeast(lowDisplay.value + 1f))
-                },
-                onCommit = { v ->
-                    val h = v.coerceAtLeast(lowDisplay.value + 1f)
-                    highDisplay.value = h
-                    rangeThrottle.onCommit(lowDisplay.value to h)
-                },
-                valueRange = minT.toFloat()..maxT.toFloat(),
-                enabled = isOn
-            )
-        }
-
-        val modes = listOf(
-            "off" to "关机", "cool" to "制冷", "heat" to "制热",
-            "dry" to "除湿", "fan_only" to "送风", "auto" to "自动"
-        )
-        Text("模式", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-        ChipRow(
-            options = modes,
-            selected = state,
-            enabled = true,
-            onSelect = { viewModel.setHvacMode(it) }
-        )
-
-        if (presetModes.isNotEmpty()) {
-            Text("预设", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            ChipRow(
-                options = presetModes.map { it to it },
-                selected = presetMode,
-                enabled = isOn,
-                onSelect = { viewModel.setPresetMode(it) }
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                if (!isRange) {
+                    // tvSetTemp：100×110dp，70sp 粗体 + 度符号（0.3 比例）+ 当前温度
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = formatTemp(displayTemp),
+                                fontSize = 64.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = RemoteColors.onSurface
+                            )
+                            Text(
+                                text = "°",
+                                fontSize = 19.sp, // 原版度符号比例 0.3 × 温度字号
+                                fontWeight = FontWeight.Normal,
+                                color = RemoteColors.onSurface
+                            )
+                        }
+                        if (currentTemp != null) {
+                            Text(
+                                text = "当前温度  ${formatTemp(currentTemp)}°",
+                                fontSize = 13.sp,
+                                color = Color(0xFFA5A5A5) // 原版 text_off_white
+                            )
+                        }
+                    }
+                } else {
+                    // 原版 heatCoolPanel：当前温度 95dp 高 + 温度不可用提示 + 双目标按钮
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = currentTemp?.let { formatTemp(it) } ?: "--",
+                            fontSize = 56.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = RemoteColors.onSurface,
+                            modifier = Modifier.height(95.dp)
+                        )
+                        if (currentTemp == null) {
+                            Text(
+                                text = "温度不可用",
+                                fontSize = 14.sp,
+                                color = Color(0xFFA0A0A0), // 原版 text_disabled
+                                modifier = Modifier.height(22.dp)
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(45.dp),
+                            modifier = Modifier.padding(top = 12.dp)
+                        ) {
+                            RangeTargetButton(
+                                label = "制热",
+                                value = rangeLow?.let { formatTemp(it) } ?: "--",
+                                enabled = available,
+                                onClick = { rangeTarget = 0 }
+                            )
+                            RangeTargetButton(
+                                label = "制冷",
+                                value = rangeHigh?.let { formatTemp(it) } ?: "--",
+                                enabled = available,
+                                onClick = { rangeTarget = 1 }
+                            )
+                        }
+                    }
+                }
+            }
+            // rlAcTempAdd：85×175dp，marginRight 20
+            TemperatureSideButton(
+                symbol = "+",
+                enabled = available && !isRange,
+                onStep = { tick -> stepTemp(1, tick) },
+                modifier = Modifier.padding(end = 20.dp)
             )
         }
 
-        if (fanModes.isNotEmpty() && fanMode != null) {
-            Text("风速", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            ChipRow(
-                options = fanModes.map { it to it },
-                selected = fanMode,
-                enabled = isOn,
-                onSelect = { viewModel.setFanMode(it) }
+        Spacer(Modifier.height(50.dp)) // 原版模式行 marginTop 50
+
+        // 原版底部 60dp 行：模式 / 风速 / 预设 三个 60×60dp 圆钮
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            RoundIconButton(
+                size = 60,
+                label = acModeLabel(state),
+                enabled = available && hvacModes.isNotEmpty(),
+                onClick = { showModePopup = true }
+            )
+            RoundIconButton(
+                size = 60,
+                label = "风速",
+                enabled = available && fanModes.isNotEmpty() && fanMode != null,
+                onClick = { showFanPopup = true }
+            )
+            RoundIconButton(
+                size = 60,
+                label = "预设",
+                enabled = available && presetModes.isNotEmpty(),
+                onClick = { showPresetPopup = true }
             )
         }
     }
+
+    if (showModePopup) {
+        OptionPopup(
+            title = "模式",
+            options = hvacModes.map { it to acModeLabel(it) },
+            selected = state,
+            onSelect = { mode ->
+                cachedMode = mode // 原版：选择模式同时更新 cachedMode
+                viewModel.setHvacMode(mode)
+                showModePopup = false
+            },
+            onDismiss = { showModePopup = false }
+        )
+    }
+    if (showFanPopup) {
+        OptionPopup(
+            title = "风速",
+            options = fanModes.map { it to it },
+            selected = fanMode,
+            onSelect = { mode ->
+                viewModel.setFanMode(mode)
+                showFanPopup = false
+            },
+            onDismiss = { showFanPopup = false }
+        )
+    }
+    if (showPresetPopup) {
+        OptionPopup(
+            title = "预设",
+            options = presetModes.map { it to it },
+            selected = presetMode,
+            onSelect = { mode ->
+                viewModel.setPresetMode(mode)
+                showPresetPopup = false
+            },
+            onDismiss = { showPresetPopup = false }
+        )
+    }
+    rangeTarget?.let { target ->
+        RangeTemperatureDialog(
+            initialLow = rangeLow ?: minT,
+            initialHigh = rangeHigh ?: maxT,
+            minTemp = minT,
+            maxTemp = maxT,
+            step = stepT,
+            target = target,
+            onApply = { low, high -> viewModel.setTemperatureRange(low, high) },
+            onDismiss = { rangeTarget = null }
+        )
+    }
+}
+
+private fun acModeLabel(mode: String): String = when (mode) {
+    "off" -> "关"
+    "auto" -> "自动"
+    "cool" -> "制冷"
+    "heat" -> "制热"
+    "dry" -> "除湿"
+    "fan_only" -> "仅送风"
+    "heat_cool" -> "制热制冷"
+    else -> mode
+}
+
+/** 原版 rlAcTempAdd / rlAcTempAddReduce：85×175dp 圆角按钮，长按 300ms 加速步进。 */
+@Composable
+private fun TemperatureSideButton(
+    symbol: String,
+    enabled: Boolean,
+    onStep: (tick: Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = RemoteColors.key,
+        modifier = modifier
+            .size(width = 85.dp, height = 175.dp)
+            .alpha(if (enabled) 1f else 0.5f)
+            .then(
+                if (enabled) Modifier.acceleratingPress(intervalMs = 300) { onStep(it) }
+                else Modifier
+            )
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = symbol,
+                fontSize = 40.sp, // 原版 40dp 图标
+                color = RemoteColors.onSurface
+            )
+        }
+    }
+}
+
+/** 原版 rlHeatTarget / rlCoolTarget：100×48dp 圆角按钮（24dp 图标 + 22sp 数值）。 */
+@Composable
+private fun RangeTargetButton(
+    label: String,
+    value: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = RemoteColors.key,
+        modifier = Modifier
+            .size(width = 100.dp, height = 48.dp)
+            .alpha(if (enabled) 1f else 0.5f)
+            .clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                color = RemoteColors.onSurfaceVariant,
+                modifier = Modifier.padding(end = 6.dp) // 原版图标 marginEnd 6
+            )
+            Text(text = value, fontSize = 22.sp, color = RemoteColors.onSurface)
+        }
+    }
+}
+
+/**
+ * 原版 AcTemperatureRangePopup：显示当前选中目标（低/高），± 步进，
+ * low ∈ [minTemp, high-step]、high ∈ [low+step, maxTemp]，每次调整立即下发。
+ */
+@Composable
+private fun RangeTemperatureDialog(
+    initialLow: Double,
+    initialHigh: Double,
+    minTemp: Double,
+    maxTemp: Double,
+    step: Double,
+    target: Int,
+    onApply: (Double, Double) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var low by remember { mutableStateOf(initialLow) }
+    var high by remember { mutableStateOf(initialHigh) }
+
+    fun adjust(up: Boolean) {
+        if (target == 0) {
+            val raw = low + if (up) step else -step
+            val next = (Math.round(raw * 10) / 10.0).let {
+                if (up) it.coerceAtMost(high - step) else it.coerceAtLeast(minTemp)
+            }
+            if (next < high && next != low) {
+                low = next
+                onApply(next, high)
+            }
+        } else {
+            val raw = high + if (up) step else -step
+            val next = (Math.round(raw * 10) / 10.0).let {
+                if (up) it.coerceAtMost(maxTemp) else it.coerceAtLeast(low + step)
+            }
+            if (next > low && next != high) {
+                high = next
+                onApply(low, next)
+            }
+        }
+    }
+
+    val value = if (target == 0) low else high
+    val canUp = if (target == 0) low + step < high else high + step <= maxTemp
+    val canDown = if (target == 0) low - step >= minTemp else high - step > low
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        containerColor = RemoteColors.surface,
+        title = {
+            Text(
+                text = if (target == 0) "制热目标温度" else "制冷目标温度",
+                color = RemoteColors.onSurface
+            )
+        },
+        text = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                RoundIconButton(
+                    size = 60,
+                    label = "−",
+                    enabled = canDown,
+                    onClick = { adjust(false) }
+                )
+                Text(
+                    text = formatTemp(value),
+                    fontSize = 55.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = RemoteColors.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f)
+                )
+                RoundIconButton(
+                    size = 60,
+                    label = "+",
+                    enabled = canUp,
+                    onClick = { adjust(true) }
+                )
+            }
+        }
+    )
 }
 
 private fun formatTemp(value: Double): String =

@@ -302,13 +302,17 @@ class CardController @Inject constructor(
             PanelCardTypes.CLIMATE -> {
                 val current = haStatesStore.states.value["$entityId.temperature"]
                     ?.state?.toDoubleOrNull()
+                // 原版 mTemperatureStep：设备步进（target_temp_step），默认 1.0；
+                // 物理键长按由调用方以 300ms（原版 KEY_INTERVAL）节奏重复触发
+                val step = haStatesStore.states.value["$entityId.target_temp_step"]
+                    ?.state?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 1.0
                 when (keyCode) {
                     24 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) + if (large) 1.0 else 0.5); true
+                        climateSetTemperature(entityId, (current ?: 24.0) + step); true
                     }
 
                     25 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) - if (large) 1.0 else 0.5); true
+                        climateSetTemperature(entityId, (current ?: 24.0) - step); true
                     }
 
                     92, 93 -> {
