@@ -437,6 +437,10 @@ class CardController @Inject constructor(
                         "media_player.volume_mute",
                         mapOf("entity_id" to entityId, "is_volume_muted" to "true")
                     )
+                    132 -> {
+                        if (state == "playing" || state == "paused") mediaCommand(entityId, "turn_off")
+                        else mediaCommand(entityId, "turn_on")
+                    }
 
                     else -> return false
                 }
