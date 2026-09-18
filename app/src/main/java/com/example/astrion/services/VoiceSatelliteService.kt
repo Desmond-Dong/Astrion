@@ -107,7 +107,7 @@ class VoiceSatelliteService() : LifecycleService() {
         while (true) {
             kotlinx.coroutines.delay(30_000)
             runCatching {
-                startForeground(
+                startForegroundSafe(
                     2,
                     createVoiceSatelliteServiceNotification(
                         this@VoiceSatelliteService,
@@ -131,11 +131,23 @@ class VoiceSatelliteService() : LifecycleService() {
         return VoiceSatelliteBinder(this)
     }
 
+    /** startForeground 带 300ms 重试：应用更新后的首次调用可能撞上
+     *  system_server 的 UidRecord 竞态（一次性 NPE）。 */
+    private fun startForegroundSafe(id: Int, notification: android.app.Notification) {
+        try {
+            startForeground(id, notification)
+        } catch (e: RuntimeException) {
+            Timber.w(e, "startForeground race, retrying")
+            Thread.sleep(300)
+            startForeground(id, notification)
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Assert foreground synchronously on every start: some OEM app
         // managers (DuraSpeed on this panel) stop "idle" services after
         // ~90s, which would otherwise drop the Home Assistant connection.
-        startForeground(
+        startForegroundSafe(
             2,
             createVoiceSatelliteServiceNotification(
                 this,
@@ -155,7 +167,7 @@ class VoiceSatelliteService() : LifecycleService() {
     @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
     private suspend fun startSatellite() {
         Timber.d("Starting voice satellite")
-        startForeground(
+        startForegroundSafe(
             2,
             createVoiceSatelliteServiceNotification(
                 this@VoiceSatelliteService,
