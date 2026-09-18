@@ -57,6 +57,7 @@ fun QuickSettingsPanel(
     connected: Boolean,
     micMuted: Boolean,
     onMicMutedChanged: (Boolean) -> Unit,
+    onScreenOff: () -> Unit,
     raiseToWake: Boolean,
     onRaiseToWakeChanged: (Boolean) -> Unit,
     screenSaverTimeout: Int,
