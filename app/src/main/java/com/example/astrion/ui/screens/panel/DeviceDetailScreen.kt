@@ -1945,7 +1945,7 @@ private fun CurtainDragView(
                     )
                 }
                 .width(with(density) { currentHandle.coerceAtLeast(0f).toDp() })
-                .height(with(density) { 250.dp.toPx() - 10.dp.toPx() }.toDp())
+                .height(with(density) { (250.dp.toPx() - 10.dp.toPx()).toDp() })
                 .clip(RoundedCornerShape(10.dp))
                 .background(
                     Brush.horizontalGradient(
