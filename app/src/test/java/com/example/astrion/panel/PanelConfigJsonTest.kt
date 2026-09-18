@@ -99,8 +99,9 @@ class PanelConfigJsonTest {
         // types inferred from the entity domain
         assertEquals(PanelCardTypes.TV, layout.rooms[0].cards[0].resolvedType)
         assertEquals(PanelCardTypes.MEDIA_PLAYER, layout.rooms[0].cards[1].resolvedType)
-        // | alias applies to single-entity lines
-        assertEquals("电视", layout.rooms[0].cards[0].name)
+        // per-entity | alias applies to its own card
+        assertEquals("", layout.rooms[0].cards[0].name)
+        assertEquals("电视", layout.rooms[0].cards[1].name)
         assertEquals("卧室", layout.rooms[1].title)
         assertEquals(PanelCardTypes.LIGHT, layout.rooms[1].cards[0].resolvedType)
         // entities auto-subscribed

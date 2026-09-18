@@ -68,8 +68,9 @@ data class PanelLayout(
          * A line without `=` puts its entities into the default room
          * "所有设备". Card types are inferred from the entity domain and the
          * entities are auto-subscribed for state rendering. Lines starting
-         * with `#` are comments. Everything after a `|` on a line is the card
-         * display name: `客厅=light.ceiling | 吸顶灯`.
+         * with `#` are comments. Each entity may carry its own display alias
+         * after a `|`: `light.ceiling|吸顶灯`; an alias identical to the
+         * entity id is ignored so the HA friendly name shows instead.
          */
         fun parseFlexible(text: String): PanelLayout? {
             if (text.isBlank()) return null
@@ -83,22 +84,23 @@ data class PanelLayout(
                 for (rawLine in text.split('\n', ';')) {
                     val line = rawLine.trim()
                     if (line.isEmpty() || line.startsWith("#")) continue
-                    val (roomPart, entityPart, cardName) = splitLine(line)
-                    val entityIds = entityPart.split(',', '，')
+                    val (roomPart, entityPart) = splitLine(line)
+                    val tokens = entityPart.split(',', '，')
                         .map { it.trim() }
                         .filter { it.contains('.') }
-                    if (entityIds.isEmpty()) {
+                    if (tokens.isEmpty()) {
                         // A line with entities or a title only: extra page
                         if (entityPart.isNotBlank() || roomPart.isNotBlank()) pages.add(roomPart.ifBlank { entityPart })
                         continue
                     }
-                    val cards = entityIds.mapIndexed { index, token ->
-                        // 每个实体可带别名：`light.bed|床头灯`；行级 `| 别名`
-                        // 仍兼容（应用到该行第一张卡）。
+                    // 每个实体可各自带别名：`light.bed|床头灯`；别名等于实体 id
+                    // 时不覆盖（friendly_name 自动解析显示）。
+                    val cards = tokens.map { token ->
                         val entityId = token.substringBefore('|').trim()
                         val alias = token.substringAfter('|', "").trim()
+                            .takeUnless { it.equals(entityId, ignoreCase = true) } ?: ""
                         PanelCard(
-                            name = alias.ifBlank { if (index == 0) cardName else "" },
+                            name = alias,
                             entities = listOf(
                                 PanelEntityRef(entityId = entityId, alias = alias)
                             )
@@ -122,13 +124,11 @@ data class PanelLayout(
             }.getOrNull()
         }
 
-        private fun splitLine(line: String): Triple<String, String, String> {
-            val titlePart = line.substringBefore('|').trim()
-            val cardName = line.substringAfter('|', "").trim()
-            val hasRoom = titlePart.contains('=')
-            val room = if (hasRoom) titlePart.substringBefore('=').trim() else ""
-            val entities = if (hasRoom) titlePart.substringAfter('=').trim() else titlePart
-            return Triple(room, entities, cardName)
+        private fun splitLine(line: String): Pair<String, String> {
+            val hasRoom = line.contains('=')
+            val room = if (hasRoom) line.substringBefore('=').trim() else ""
+            val entities = if (hasRoom) line.substringAfter('=').trim() else line
+            return room to entities
         }
 
         const val DEFAULT_ROOM_TITLE = "所有设备"
