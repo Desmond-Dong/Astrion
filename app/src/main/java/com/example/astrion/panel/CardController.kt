@@ -334,12 +334,21 @@ class CardController @Inject constructor(
                 val percentage = haStatesStore.states.value["$entityId.percentage"]
                     ?.state?.toFloatOrNull()
                 when (keyCode) {
-                    24 -> {
-                        fanSetPercentage(entityId, ((percentage ?: 0f) + if (large) 5f else 1f).toInt()); true
-                    }
-
-                    25 -> {
-                        fanSetPercentage(entityId, ((percentage ?: 100f) - if (large) 5f else 1f).toInt()); true
+                    24, 25 -> {
+                        // 原版 adjustFanSpeedByKey：按 percentage_step 档位上下移动
+                        // （步进默认 20 → 最多 5 档），到边界忽略按键
+                        val step = haStatesStore.states.value["$entityId.percentage_step"]
+                            ?.state?.toFloatOrNull()?.takeIf { it > 0f } ?: 20f
+                        val count = (100f / step).toInt().coerceIn(1, 5)
+                        val levels = (1..count).map { (it * step).toInt().coerceAtMost(100) }
+                        val current = percentage ?: 0f
+                        val idx = levels.withIndex()
+                            .minByOrNull { kotlin.math.abs(it.value - current) }?.index ?: 0
+                        val nextIdx = idx + if (keyCode == 24) 1 else -1
+                        if (nextIdx in levels.indices) {
+                            fanSetPercentage(entityId, levels[nextIdx])
+                        }
+                        true
                     }
 
                     132 -> {

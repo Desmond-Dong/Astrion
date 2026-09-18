@@ -1,5 +1,7 @@
 package com.example.astrion.ui.screens.panel
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1554,7 +1556,18 @@ private fun VerticalValuePicker(
 }
 
 
-// ── Fan (§3.10.4 ④) ────────────────────────────────────────────────────
+// ── Fan (§3.10.4 ④) — 原版 activity_device_fan.xml + FanActivity ────────
+//
+// 布局（原版 dp 值）：顶部 60×60dp 电源开关（marginTop 10，居中）；档位列表
+// 340dp 高（左右边距 20），五档在上、一档在下，行间 10dp 间距；每行圆角底、
+// padding 15，内容为 40dp 风叶图标 + 15sp 白色档位文字（一档..五档）。
+// 不支持百分比时隐藏列表，显示 16sp #666666 提示“不支持风速调节”。
+//
+// 逻辑（原版 FanActivity）：percentage_step（默认 20）→ 档位数 = 100/step
+// 夹在 1..5，档位值 = min(i*step, 100)；点击档位立即高亮、300ms 防抖后下发
+// fan.set_percentage，1500ms 内不跟随 HA 回写；电源切换 300ms 防抖，列表
+// alpha 以 500ms 动画切换 1.0/0.5（首次 0ms）；物理键 24/25 按最近档位上下
+// 移动、132 切换电源。
 
 @Composable
 private fun FanContent(
@@ -1564,47 +1577,136 @@ private fun FanContent(
 ) {
     val state = stateOf(card, haStates) ?: "off"
     val isOn = state == "on"
-    val percentage = stateOf(card, haStates, "percentage")?.toFloatOrNull() ?: 0f
-    val display = remember(percentage) { mutableStateOf(percentage) }
-    val throttle = rememberValueThrottle<Float>(
-        send = { v -> viewModel.fanPercentage(v.toInt()) },
-        intervalMs = 100
+    val percentage = stateOf(card, haStates, "percentage")?.toFloatOrNull()
+    val stepAttr = stateOf(card, haStates, "percentage_step")?.toFloatOrNull()
+    val supportsPercentage = percentage != null || stepAttr != null
+
+    val scope = rememberCoroutineScope()
+
+    // 原版 buildSpeedLevels：步进默认 20，档位数 = 100/step 夹在 1..5
+    val step = stepAttr?.takeIf { it > 0f } ?: 20f
+    val levelCount = (100f / step).toInt().coerceIn(1, 5)
+    val levels = (1..levelCount).map { minOf((it * step).toInt(), 100) }
+    val levelLabels = listOf("一档", "二档", "三档", "四档", "五档")
+
+    // 选中档位 + 1500ms 用户覆盖窗口（原版 UserOverrideWindowManager "fan"）
+    var pendingLevel by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(pendingLevel) {
+        if (pendingLevel != null) {
+            delay(1500)
+            pendingLevel = null
+        }
+    }
+
+    // 档位点击：立即高亮，300ms 防抖后下发（原版 mSpeedDebounceRunnable）
+    var speedJob by remember { mutableStateOf<Job?>(null) }
+    fun setFanSpeed(value: Int) {
+        pendingLevel = value
+        speedJob?.cancel()
+        speedJob = scope.launch {
+            delay(300)
+            speedJob = null
+            viewModel.fanPercentage(value)
+        }
+    }
+
+    // 电源 300ms 防抖（原版 mSwitchDebounceRunnable）
+    var powerJob by remember { mutableStateOf<Job?>(null) }
+    fun requestPower(on: Boolean) {
+        if (powerJob?.isActive == true) return
+        powerJob = scope.launch {
+            delay(300)
+            powerJob = null
+            if (on) viewModel.turnOn() else viewModel.turnOff()
+        }
+    }
+
+    // 原版 updateBtnPowerUI：alpha 500ms 动画 1.0/0.5（首次 0ms 由初始值承担）
+    val listAlpha by animateFloatAsState(
+        targetValue = if (isOn) 1f else 0.5f,
+        animationSpec = tween(durationMillis = 500),
+        label = "fanListAlpha"
     )
+
+    // 原版 updateSpeedIconUI：百分比与档位值完全相等才高亮
+    val selectedLevel = pendingLevel
+        ?: percentage?.toInt()?.let { cur -> levels.firstOrNull { it == cur } }
 
     Column(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.SpaceEvenly,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "${display.value.toInt()}%",
-            fontSize = 56.sp,
-            fontWeight = FontWeight.Bold,
-            color = RemoteColors.onSurface,
-            modifier = Modifier.alpha(if (isOn) 1f else 0.5f)
+        // 原版 imgSwitchView：60×60dp 电源开关，marginTop 10
+        DevicePowerSwitch(
+            isOn = isOn,
+            onRes = R.drawable.ic_state_fan_on,
+            offRes = R.drawable.ic_state_fan_off,
+            onToggle = { requestPower(it) }
         )
 
-        NativeSlider(
-            value = display.value,
-            onDrag = { v ->
-                display.value = v
-                throttle.onDrag(v)
-            },
-            onCommit = { v ->
-                display.value = v
-                throttle.onCommit(v)
-            },
-            valueRange = 0f..100f,
-            enabled = isOn
-        )
-
-        RemoteKey(
-            label = if (isOn) "关闭" else "打开",
-            size = 84,
-            onClick = { if (isOn) viewModel.turnOff() else viewModel.turnOn() }
-        )
+        if (!supportsPercentage) {
+            // 原版 tvSpeedDeviceControl：16sp #666666 居中提示
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "不支持风速调节",
+                    fontSize = 16.sp,
+                    color = Color(0xFF666666)
+                )
+            }
+        } else {
+            Spacer(Modifier.weight(1f))
+            // 原版 llSpeed：340dp 高、左右边距 20，行间 10dp
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .height(340.dp)
+                    .alpha(listAlpha),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // 原版布局 rlSpeed5 在最上（五档 → 一档）
+                levels.asReversed().forEach { value ->
+                    val index = levels.indexOf(value)
+                    val isSelected = selectedLevel == value
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) RemoteColors.surfaceVariant else RemoteColors.key,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clickable(enabled = isOn) { setFanSpeed(value) }
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(15.dp) // 原版行 padding 15
+                        ) {
+                            Text(
+                                text = "✳",
+                                fontSize = (24 + index * 4).sp, // 原版风叶图标随档位增强
+                                color = if (isSelected) RemoteColors.accent else RemoteColors.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = levelLabels[index],
+                                fontSize = 15.sp,
+                                color = if (isSelected) RemoteColors.accent else RemoteColors.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
+
+
 
 // ── Cover (§3.10.4 ⑤⑥⑦) ───────────────────────────────────────────────
 
