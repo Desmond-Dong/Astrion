@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.astrion.services.ActivityNavigator
 import com.example.astrion.services.HaActionBus
 import com.example.astrion.services.SatelliteStateHolder
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
