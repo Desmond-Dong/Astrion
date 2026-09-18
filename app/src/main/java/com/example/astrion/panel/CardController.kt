@@ -209,6 +209,17 @@ class CardController @Inject constructor(
             mapOf("entity_id" to entityId, "volume_level" to level.coerceIn(0f, 1f).toString())
         )
 
+    /**
+     * 原版 MediaPlayControlView.setVolumeMute：is_volume_muted = !当前值。
+     */
+    suspend fun mediaToggleMute(entityId: String) {
+        val muted = haStatesStore.states.value["$entityId.is_volume_muted"]?.state == "true"
+        haActionBus.callService(
+            "media_player.volume_mute",
+            mapOf("entity_id" to entityId, "is_volume_muted" to (!muted).toString())
+        )
+    }
+
     suspend fun mediaSeek(entityId: String, positionSec: Int) =
         haActionBus.callService(
             "media_player.media_seek",

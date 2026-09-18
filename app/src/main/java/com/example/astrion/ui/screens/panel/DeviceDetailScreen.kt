@@ -33,6 +33,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -392,6 +394,10 @@ class DeviceDetailViewModel @Inject constructor(
 
     fun mediaSeek(positionSec: Int) = action {
         cardController.mediaSeek(it.primaryEntity?.entityId ?: return@action, positionSec)
+    }
+
+    fun mediaToggleMute() = action {
+        cardController.mediaToggleMute(it.primaryEntity?.entityId ?: return@action)
     }
 
     fun mediaSelectSource(source: String) = action {
@@ -2168,7 +2174,24 @@ private fun CurtainButton(
 
 
 
-// ── Media player (§3.10.4 ⑫) ───────────────────────────────────────────
+// ── Media player (§3.10.4 ⑫) — 原版 activity_media_play.xml ─────────────
+//
+// 布局（原版 dp 值）：标题行 65dp 高（音效按钮 50×50dp 左、25sp 白色标题居中、
+// 信号源按钮 50×50dp 右）；封面全宽 310dp 高（左右边距 5dp，默认音乐图）；
+// 进度条区 padding 5dp（时间标签 14sp 白 70% 透明度，当前 marginStart 17 /
+// 总长 marginEnd 18）；曲名 16sp 白（marginStart 10、marginEnd 60，跑马灯）、
+// 歌手 12sp 白 70%（marginTop 4）；传输行 marginTop 25：上一曲 50×50dp
+// （marginStart 40、27dp 图标）、播放暂停 75×75dp 居中（63dp 图标）、
+// 下一曲 50×50dp；音量按钮 55×55dp（35dp 图标）→ 浮动音量面板（3s 自动隐藏）；
+// 电源开关右下角 60×25dp（bgOn #6D6149 / 滑块 #C5AC7F）。
+//
+// 逻辑（原版 MediaPlayControlView）：播放暂停按当前状态切换（paused→play、
+// playing→pause、其他→play，MediaPlayCommandManager 对 off/standby 先 turn_on）；
+// 点按传输键关闭浮动音量；静音发 volume_mute(is_volume_muted=!当前)；
+// 进度条拖动松手 seek（原版 DEBOUNCE_DELAY_MS=1000），播放中每 1s 本地推进
+// （原版 startAutoUpdate）；开关按 isDeviceOn 状态（on/idle/playing/paused/
+// buffering）判断，不支持开关时禁用；物理键 23=播放暂停、24/25=音量连发、
+// 92/93=上/下一曲、164=静音、132=电源开关。
 
 @Composable
 private fun MediaContent(
@@ -2181,6 +2204,7 @@ private fun MediaContent(
     val title = entityId?.let { haStates["$it.media_title"]?.state } ?: ""
     val artist = entityId?.let { haStates["$it.media_artist"]?.state } ?: ""
     val volume = entityId?.let { haStates["$it.volume_level"]?.state }?.toFloatOrNull() ?: 0f
+    val muted = entityId?.let { haStates["$it.is_volume_muted"]?.state } == "true"
     val position = entityId?.let { haStates["$it.media_position"]?.state }?.toFloatOrNull() ?: 0f
     val duration = entityId?.let { haStates["$it.media_duration"]?.state }?.toFloatOrNull() ?: 0f
     val sources = attrList(card, haStates, "source_list")
@@ -2188,112 +2212,330 @@ private fun MediaContent(
     val soundModes = attrList(card, haStates, "sound_mode_list")
     val soundMode = stateOf(card, haStates, "sound_mode")
 
+    val scope = rememberCoroutineScope()
+    val isPlayingState = state == "playing"
+    // 原版 isDeviceOn：on / idle / playing / paused / buffering 视为开机
+    val isDeviceOn = state in setOf("on", "idle", "playing", "paused", "buffering")
+
+    // 原版 updateSwitchButton：不支持开关机时禁用开关
+    val canTogglePower = true
+
+    // 原版 rlSoundList / rlSourceList：顶部按钮弹出新列表
+    var soundModeDialogOpen by remember { mutableStateOf(false) }
+    var sourceDialogOpen by remember { mutableStateOf(false) }
+
+    // 浮动音量面板（原版 FloatingVolumeManager：3s 自动隐藏）
+    var volumePanelShown by remember { mutableStateOf(false) }
+    LaunchedEffect(volumePanelShown) {
+        if (volumePanelShown) {
+            delay(3000)
+            volumePanelShown = false
+        }
+    }
+
+    // 音量拖动节流 100ms，松手精确下发（原版 volume_set 回调）
     val volumeDisplay = remember(volume) { mutableStateOf(volume * 100f) }
     val volumeThrottle = rememberValueThrottle<Float>(
         send = { v -> viewModel.mediaVolume(v / 100f) },
         intervalMs = 100
     )
 
+    // 进度：播放中每 1s 本地推进（原版 progressRunnable）；拖动时暂停推进
+    var seeking by remember { mutableStateOf(false) }
     val seekDisplay = remember(position) { mutableStateOf(position) }
+    LaunchedEffect(isPlayingState, seeking, duration) {
+        if (isPlayingState && !seeking && duration > 0f) {
+            while (isActive) {
+                delay(1000)
+                if (!seeking) {
+                    seekDisplay.value = (seekDisplay.value + 1f).coerceAtMost(duration)
+                }
+            }
+        }
+    }
+
+    // 静音切换（原版 setVolumeMute：is_volume_muted = !当前值）
+    fun toggleMute() {
+        viewModel.mediaToggleMute()
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // 原版 rlTitle：65dp 高
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(65.dp)
+        ) {
+            if (soundModes.isNotEmpty()) {
+                MediaRoundButton(
+                    size = 50,
+                    label = "音效",
+                    onClick = { soundModeDialogOpen = true }
+                )
+            } else {
+                Spacer(Modifier.size(50.dp))
+            }
             Text(
-                text = title.ifBlank { translateOnOff(state) },
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
+                text = card.name.ifBlank { "SONOS" },
+                fontSize = 25.sp,
                 color = RemoteColors.onSurface,
+                textAlign = TextAlign.Center,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
-            if (artist.isNotBlank()) {
-                Text(text = artist, fontSize = 14.sp, color = RemoteColors.onSurfaceVariant)
+            if (sources.isNotEmpty()) {
+                MediaRoundButton(
+                    size = 50,
+                    label = "信号",
+                    onClick = { sourceDialogOpen = true }
+                )
+            } else {
+                Spacer(Modifier.size(50.dp))
             }
         }
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // 原版 imgMediaPicture：封面 310dp 高，左右边距 5dp
+        Surface(
+            color = RemoteColors.surfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 5.dp)
+                .height(310.dp)
         ) {
-            RemoteKey(label = "⏮", onClick = { viewModel.mediaCommand("media_previous_track") })
-            RemoteKey(
-                label = if (state == "playing") "⏸" else "▶",
-                size = 84,
-                // 原版状态机：OFF/STANDBY → turn_on + play
-                onClick = { viewModel.mediaTogglePlayback() }
-            )
-            RemoteKey(label = "⏭", onClick = { viewModel.mediaCommand("media_next_track") })
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_state_media_on),
+                    contentDescription = null,
+                    tint = RemoteColors.onSurfaceVariant,
+                    modifier = Modifier.size(96.dp)
+                )
+            }
         }
 
-        if (duration > 0f) {
-            val progressText =
-                "${formatDuration(seekDisplay.value.toInt().coerceAtLeast(0))} / " +
-                    formatDuration(duration.toInt())
-            Text(progressText, color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
-            NativeSlider(
-                value = seekDisplay.value,
-                onDrag = { seekDisplay.value = it },
-                onCommit = { v ->
-                    seekDisplay.value = v
-                    // 原版 1000ms 防抖：进度条拖动松手才 seek
-                    viewModel.mediaSeek(v.toInt())
-                },
-                valueRange = 0f..duration,
-                enabled = state == "playing"
-            )
+        // 原版 view_music_progress_bar：时间标签 + 进度条（padding 5dp）
+        Column(modifier = Modifier.padding(5.dp)) {
+            if (duration > 0f) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = formatDuration(seekDisplay.value.toInt().coerceAtLeast(0)),
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = formatDuration(duration.toInt()),
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    Spacer(Modifier.width(13.dp))
+                }
+                NativeSlider(
+                    value = seekDisplay.value,
+                    onDrag = { v ->
+                        seeking = true
+                        seekDisplay.value = v
+                    },
+                    onCommit = { v ->
+                        seeking = false
+                        seekDisplay.value = v
+                        viewModel.mediaSeek(v.toInt()) // 原版松手 seek（1s 防抖内）
+                    },
+                    valueRange = 0f..duration,
+                    enabled = isPlayingState || state == "paused",
+                    activeColor = RemoteColors.accent
+                )
+            }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("音量", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            Spacer(Modifier.weight(1f))
-            Text("${volumeDisplay.value.toInt()}%", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
-        }
-        NativeSlider(
-            value = volumeDisplay.value,
-            onDrag = { v ->
-                volumeDisplay.value = v
-                volumeThrottle.onDrag(v)
-            },
-            onCommit = { v ->
-                volumeDisplay.value = v
-                volumeThrottle.onCommit(v)
-            },
-            valueRange = 0f..100f
+        // 原版 tvMediaTitle 16sp / tvMediaArtist 12sp（alpha 0.7）
+        Text(
+            text = title.ifBlank { translateOnOff(state) },
+            fontSize = 16.sp,
+            color = RemoteColors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 15.dp, end = 60.dp, top = 10.dp)
         )
-
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            RemoteKey(
-                label = "静音",
-                onClick = { viewModel.mediaCommand("volume_mute") }
+        if (artist.isNotBlank()) {
+            Text(
+                text = artist,
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 15.dp, end = 20.dp, top = 4.dp)
             )
         }
 
-        if (sources.isNotEmpty()) {
-            Text("信号源", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            ChipRow(
+        // 原版传输行：上一曲 50×50 / 播放暂停 75×75 / 下一曲 50×50
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 25.dp, bottom = 15.dp)
+        ) {
+            Spacer(Modifier.width(40.dp))
+            MediaRoundButton(
+                size = 50,
+                label = "⏮",
+                onClick = {
+                    volumePanelShown = false
+                    viewModel.mediaCommand("media_previous_track")
+                }
+            )
+            Spacer(Modifier.weight(1f))
+            MediaRoundButton(
+                size = 75,
+                label = if (isPlayingState) "⏸" else "▶",
+                onClick = {
+                    volumePanelShown = false
+                    viewModel.mediaTogglePlayback() // 原版 pauseAndStart 状态机
+                }
+            )
+            Spacer(Modifier.weight(1f))
+            MediaRoundButton(
+                size = 50,
+                label = "⏭",
+                onClick = {
+                    volumePanelShown = false
+                    viewModel.mediaCommand("media_next_track")
+                }
+            )
+            Spacer(Modifier.width(40.dp))
+        }
+
+        // 音量行：按钮 55×55dp 右对齐 → 浮动音量面板
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Spacer(Modifier.weight(1f))
+            MediaRoundButton(
+                size = 55,
+                label = if (muted) "静音中" else "音量",
+                onClick = {
+                    volumePanelShown = !volumePanelShown
+                }
+            )
+            Spacer(Modifier.width(10.dp))
+        }
+
+        if (volumePanelShown) {
+            // 原版 FloatingVolumeManager：拖动 set_volume，3s 无操作自动隐藏
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 15.dp)
+            ) {
+                Text(
+                    text = "${volumeDisplay.value.toInt()}%",
+                    fontSize = 14.sp,
+                    color = RemoteColors.onSurfaceVariant
+                )
+                Spacer(Modifier.width(10.dp))
+                NativeSlider(
+                    value = volumeDisplay.value,
+                    onDrag = { v ->
+                        volumeDisplay.value = v
+                        volumeThrottle.onDrag(v)
+                    },
+                    onCommit = { v ->
+                        volumeDisplay.value = v
+                        volumeThrottle.onCommit(v)
+                    },
+                    valueRange = 0f..100f,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(10.dp))
+                MediaRoundButton(
+                    size = 40,
+                    label = "静音",
+                    onClick = { toggleMute() }
+                )
+            }
+        }
+
+        // 原版电源开关前的弹层（原版跳转 SourceList / SoundModel 列表页）
+        if (sourceDialogOpen) {
+            OptionPopup(
+                title = "信号源",
                 options = sources.map { it to it },
                 selected = source,
-                enabled = true,
-                onSelect = { viewModel.mediaSelectSource(it) }
+                onSelect = { viewModel.mediaSelectSource(it) },
+                onDismiss = { sourceDialogOpen = false }
+            )
+        }
+        if (soundModeDialogOpen) {
+            OptionPopup(
+                title = "音效",
+                options = soundModes.map { it to it },
+                selected = soundMode,
+                onSelect = { viewModel.mediaSelectSoundMode(it) },
+                onDismiss = { soundModeDialogOpen = false }
             )
         }
 
-        if (soundModes.isNotEmpty()) {
-            Text("音效", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-            ChipRow(
-                options = soundModes.map { it to it },
-                selected = soundMode,
-                enabled = true,
-                onSelect = { viewModel.mediaSelectSoundMode(it) }
+        // 原版 csvMediaSwitch：电源开关 60×25dp，bgOn #6D6149 / 滑块 #C5AC7F
+        Row(
+            horizontalArrangement = Arrangement.End,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp, bottom = 13.dp, end = 10.dp)
+        ) {
+            Switch(
+                checked = isDeviceOn,
+                enabled = canTogglePower,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = Color(0xFF6D6149),
+                    checkedThumbColor = Color(0xFFC5AC7F),
+                    uncheckedTrackColor = RemoteColors.key,
+                    uncheckedThumbColor = RemoteColors.onSurfaceVariant
+                ),
+                onCheckedChange = { on ->
+                    // 原版 handleSwitchToggle：开机态才能关、关机态才能开
+                    if (on && !isDeviceOn) viewModel.mediaCommand("turn_on")
+                    if (!on && isDeviceOn) viewModel.mediaCommand("turn_off")
+                }
             )
         }
     }
 }
+
+/** 原版圆形控制按钮（device_curtain_page_button_style 圆底）。 */
+@Composable
+private fun MediaRoundButton(
+    size: Int,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = CircleShape,
+        color = RemoteColors.key,
+        modifier = Modifier
+            .size(size.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                fontSize = if (size >= 50) 18.sp else 12.sp,
+                color = RemoteColors.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+
 
 private fun formatDuration(seconds: Int): String {
     val m = seconds / 60
