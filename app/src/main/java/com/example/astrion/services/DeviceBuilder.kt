@@ -61,6 +61,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.launchIn
@@ -172,7 +173,12 @@ class DeviceBuilder @Inject constructor(
             logger = TimberLogger(),
             entities = buildEntities(coroutineContext, voiceOutput, deviceHolder, scope),
             haStatesStore = haStatesStore,
-            getHaSyncedEntityIds = { panelConfigStore.syncEntities.first() },
+            getHaSyncedEntityIds = {
+                // The fixed transport sensor carries layouts of ANY length:
+                // HA template sensors have no 255-char state cap like text
+                // entities do.
+                panelConfigStore.syncEntities.first() + TRANSPORT_SENSOR_ID
+            },
             haActionBus = haActionBus
         )
         deviceHolder.set(device)
@@ -187,6 +193,19 @@ class DeviceBuilder @Inject constructor(
     ): List<Entity> {
         val keyAllocator = EntityKeyAllocator(0)
         val entities = mutableListOf<Entity>()
+
+        // A template sensor named sensor.astrion_layout is the unlimited
+        // transport for layouts: HA computes its state (no 255-char text
+        // cap) and the panel parses it exactly like the text entity form.
+        haStatesStore.states
+            .map { states -> states[TRANSPORT_SENSOR_ID]?.state }
+            .filter { !it.isNullOrBlank() }
+            .distinctUntilChanged()
+            .onEach { state ->
+                runCatching { panelConfigStore.applyLayoutJson(state) }
+                    .onFailure { Timber.e(it, "Bad layout from transport sensor") }
+            }
+            .launchIn(scope)
 
         // Voice satellite controls (state-backed entities, set from HA)
         entities += MediaPlayerEntity(
@@ -828,6 +847,9 @@ class DeviceBuilder @Inject constructor(
 
         /** Default wake word sensitivity, equal to the stock 0.97 cutoff. */
         const val DEFAULT_WAKE_WORD_SENSITIVITY = 0.03f
+
+        /** Fixed HA entity whose state carries layouts of any length. */
+        const val TRANSPORT_SENSOR_ID = "sensor.astrion_layout"
     }
 }
 
