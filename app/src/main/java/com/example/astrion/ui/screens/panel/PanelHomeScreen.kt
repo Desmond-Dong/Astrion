@@ -594,6 +594,21 @@ private fun DeviceCard(
     }
 }
 
+/** 原版两态图标：开=彩色 on 图标，关=灰色 off 图标。 */
+private fun stateIconRes(type: String, isOn: Boolean): Int {
+    val pair = when (type) {
+        PanelCardTypes.LIGHT -> R.drawable.ic_state_light_on to R.drawable.ic_state_light_off
+        PanelCardTypes.CLIMATE -> R.drawable.ic_state_climate_on to R.drawable.ic_state_climate_off
+        PanelCardTypes.COVER -> R.drawable.ic_state_cover_on to R.drawable.ic_state_cover_off
+        PanelCardTypes.FAN -> R.drawable.ic_state_fan_on to R.drawable.ic_state_fan_off
+        PanelCardTypes.MEDIA_PLAYER -> R.drawable.ic_state_media_on to R.drawable.ic_state_media_off
+        PanelCardTypes.SWITCH -> R.drawable.ic_state_switch_on to R.drawable.ic_state_switch_off
+        PanelCardTypes.TV -> R.drawable.ic_state_tv_on to R.drawable.ic_state_tv_off
+        else -> R.drawable.ic_state_default to R.drawable.ic_state_default
+    }
+    return if (isOn) pair.first else pair.second
+}
+
 @Composable
 private fun PageDotsIndicator(
     pageCount: Int,

@@ -35,6 +35,9 @@ object RemoteColors {
     val roomName = Color(0xFFCCCCCC)
     val popupBackground = Color(0xFF2B2B2B)
     val wifiHint = Color(0xFF8C7B5B)
+    val popupLine = Color(0xFF3A3A3C)
+    val dot = Color(0xFFBFBDBD)
+    val rowSeparator = Color(0xFF27D343)
 }
 
 val RemoteBackground = Brush.verticalGradient(
