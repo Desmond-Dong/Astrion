@@ -537,9 +537,11 @@ private fun DeviceCard(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 原版 PNG 是白/彩色透明底位图，不能被 Icon 默认着色
             Icon(
                 painter = painterResource(iconRes),
                 contentDescription = card.resolvedType,
+                tint = Color.Unspecified,
                 modifier = Modifier
                     .size(50.dp)
                     .alpha(0.8f)
