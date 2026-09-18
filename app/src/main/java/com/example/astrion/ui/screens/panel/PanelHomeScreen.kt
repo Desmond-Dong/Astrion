@@ -6,6 +6,10 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -466,14 +470,14 @@ private fun RoomSelectorBar(
     }
 }
 
-/** 原生设备列表：一列设备行，开机时整行变暖褐底 + 底部绿色指示线。 */
+/** 原版双列设备卡片网格：类型专属彩色渐变图标 + 名称 + 状态点。 */
 @Composable
 private fun RoomDeviceList(
     cards: List<PanelCard>,
     haStates: Map<String, com.example.astrion.services.HaEntityState>,
     onOpenCard: (PanelCard) -> Unit,
 ) {
-    // 容错: duplicate keys would crash the list - keep the first of any dupes
+    // 容错: duplicate keys would crash the grid - keep the first of any dupes
     val uniqueCards = remember(cards) { cards.distinctBy { it.cardId } }
     if (cards.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -490,13 +494,15 @@ private fun RoomDeviceList(
         }
         return
     }
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         items(uniqueCards, key = { it.cardId }) { card ->
-            DeviceRow(
+            DeviceCard(
                 card = card,
                 name = card.displayName(haStates),
                 stateText = cardStateText(card, haStates),
@@ -507,73 +513,84 @@ private fun RoomDeviceList(
 }
 
 @Composable
-private fun DeviceRow(
+private fun DeviceCard(
     card: PanelCard,
     name: String,
     stateText: String,
     onClick: () -> Unit,
 ) {
+    val accent = cardAccent(card.resolvedType)
     val isOn = stateText.contains("开启") || stateText.contains("打开") ||
         stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
     val isOffline = stateText.contains("不可用") || stateText.contains("unavailable")
-    val bg = if (isOn) RemoteColors.deviceOn else Color.Transparent
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(150.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(bg)
+            .height(134.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (isOn) RemoteColors.deviceOn else RemoteColors.surface)
             .clickable(onClick = onClick)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                painter = painterResource(cardIconRes(card.resolvedType)),
-                contentDescription = card.resolvedType,
-                tint = Color(0xFFE6E6E6).copy(alpha = 0.85f),
-                modifier = Modifier.size(46.dp)
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = name,
-                color = RemoteColors.onSurfaceVariant,
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (isOffline) {
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(RemoteColors.error, CircleShape)
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text(text = "离线", color = RemoteColors.error, fontSize = 13.sp)
-                }
-            } else if (stateText.isNotBlank() && stateText != "关闭") {
-                Spacer(Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .background(
+                        Brush.linearGradient(accent),
+                        RoundedCornerShape(14.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(cardIconRes(card.resolvedType)),
+                    contentDescription = card.resolvedType,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            Column {
                 Text(
-                    text = stateText,
-                    color = RemoteColors.hintText,
-                    fontSize = 12.sp,
+                    text = name,
+                    color = RemoteColors.onSurface,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-            }
-            if (card.resolvedType == PanelCardTypes.LIGHT ||
-                card.resolvedType == PanelCardTypes.CLIMATE
-            ) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "亮度", color = RemoteColors.hintText, fontSize = 12.sp)
-                    Spacer(Modifier.width(18.dp))
-                    Text(text = "色温", color = RemoteColors.hintText, fontSize = 12.sp)
+                    if (isOffline) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(RemoteColors.error, CircleShape)
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(text = "离线", color = RemoteColors.error, fontSize = 12.sp)
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(
+                                    color = if (isOn) RemoteColors.secondary else RemoteColors.outline,
+                                    shape = CircleShape
+                                )
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = stateText.ifBlank { " " },
+                            color = RemoteColors.hintText,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
