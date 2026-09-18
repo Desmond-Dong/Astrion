@@ -1,5 +1,6 @@
 package com.example.astrion.panel
 
+import android.content.Context
 import com.example.astrion.services.ActivityNavigator
 import com.example.astrion.services.HaActionBus
 import com.example.astrion.services.SatelliteStateHolder
@@ -13,6 +14,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** A physical key press reported by the activity. */
+private const val KEY_BACK = 4
+private const val KEY_HOME_PANEL = 164
+private const val KEY_VOLUME_UP = 24
+private const val KEY_VOLUME_DOWN = 25
+
 data class KeyPress(
     val keyCode: Int,
     val longPress: Boolean,
@@ -48,7 +54,8 @@ class PhysicalKeyBus @Inject constructor() {
 class KeyRouter @Inject constructor(
     private val keyBindingExecutor: KeyBindingExecutor,
     private val eventHub: PanelEventHub,
-    private val panelUiEvents: PanelUiEvents
+    private val panelUiEvents: PanelUiEvents,
+    @ApplicationContext private val context: Context
 ) {
     // 原版 BaseActivity：页面进入注册按键监听、离开注销，栈顶优先。
     // 用栈而不是单个引用，叠加打开多个设备页时返回后上一页按键不丢。
@@ -85,13 +92,22 @@ class KeyRouter @Inject constructor(
             return true
         }
         if (topHandler()?.invoke(press) == true) return true
-        return keyBindingExecutor.handle(press)
+        if (keyBindingExecutor.handle(press)) return true
+        // 原版 BaseActivity 语义：未绑定的音量键直接调媒体音量（外放），
+        // 任何页面都可用 - 正常遥控器的使用习惯。
+        if (!press.longPress && (press.keyCode == KEY_VOLUME_UP || press.keyCode == KEY_VOLUME_DOWN)) {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.adjustStreamVolume(
+                android.media.AudioManager.STREAM_MUSIC,
+                if (press.keyCode == KEY_VOLUME_UP) android.media.AudioManager.ADJUST_RAISE
+                else android.media.AudioManager.ADJUST_LOWER,
+                android.media.AudioManager.FLAG_SHOW_UI
+            )
+            return true
+        }
+        return false
     }
 
-    private companion object {
-        const val KEY_BACK = 4
-        const val KEY_HOME_PANEL = 164
-    }
 }
 
 /**
