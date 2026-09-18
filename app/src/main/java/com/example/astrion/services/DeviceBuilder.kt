@@ -199,8 +199,8 @@ class DeviceBuilder @Inject constructor(
         // transport for layouts: HA computes its state (no 255-char text
         // cap) and the panel parses it exactly like the text entity form.
         haStatesStore.states
-            .map { states -> states[TRANSPORT_SENSOR_ID]?.state }
-            .filter { !it.isNullOrBlank() }
+            .map { states -> states[TRANSPORT_SENSOR_ID]?.state?.takeIf { it.isNotBlank() } }
+            .filterNotNull()
             .distinctUntilChanged()
             .onEach { state ->
                 runCatching { panelConfigStore.applyLayoutJson(state) }
