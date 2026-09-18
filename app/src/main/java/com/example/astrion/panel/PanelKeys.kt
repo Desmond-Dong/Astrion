@@ -93,6 +93,9 @@ class KeyRouter @Inject constructor(
             panelUiEvents.requestGoHome()
             return true
         }
+        // 164=静音（原版 BaseActivity 语义）：透传给设备页（媒体页 toggleMute、
+        // TV 页 toggleMute），非设备页落到绑定系统
+
         if (topHandler()?.invoke(press) == true) return true
         if (keyBindingExecutor.handle(press)) return true
         // 原版 BaseActivity 语义：未绑定的音量键直接调媒体音量（外放），
