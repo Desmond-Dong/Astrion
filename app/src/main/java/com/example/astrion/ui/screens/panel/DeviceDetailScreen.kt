@@ -418,7 +418,7 @@ fun DeviceDetailScreen(
         onBack = { navController.popBackStack() }
     ) {
         when (current?.resolvedType) {
-            PanelCardTypes.TV -> TvRemoteContent(current, haStates, viewModel)
+            PanelCardTypes.TV -> TvRemoteContent(current, haStates, viewModel, onExit = { navController.popBackStack() })
             PanelCardTypes.CLIMATE -> ClimateContent(current, haStates, viewModel)
             PanelCardTypes.LIGHT -> LightContent(current, haStates, viewModel)
             PanelCardTypes.FAN -> FanContent(current, haStates, viewModel)
@@ -564,30 +564,72 @@ private fun attrList(
         .map { it.trim() }
         .filter { it.isNotBlank() }
 
-// ── TV remote (§3.10.4 ⑰) ──────────────────────────────────────────────
+// ── TV remote (§3.10.4 ⑰) — 原版 activity_tv.xml + TvControlView ────────
+//
+// 布局（原版 dp 值）：标题 20sp 白色、50dp 高；电源按钮 75×75dp 圆底 +
+// 40dp 图标（marginTop 90→压缩为 20）；主页/播放/信号源按钮 100dp 宽、
+// 230dp 高三等分（间隔 30→此处横排 ~76dp 高）；音量半圆 80×75dp
+// （button_top/buttom_semicircle_style）；"123" 数字键入口 100×55dp。
+// 方向环为硬件方向键（19/20/21/22/23）的屏上等价物，60dp 圆键。
+//
+// 逻辑（原版 TvControlView）：电源=POWER 键（togglePowerOnOrOff）；播放键
+// 本地 isPlay 状态在 PLAY/PAUSE 间切换并换图标；静音=MUTE（toggleMute）；
+// 音量=VOLUME_UP/DOWN；长按 {24,25,92,93,19,20,21,22} 500ms 后连发
+// （LongPressKeyHandler(500)）；数字键盘（TvNumberKeyboardDialog，底部弹出）
+// NUM_0..9 / KEY_A/B/C / 返回=BACK / 删除=DELETE / ok=CENTER 并关闭；
+// BACK 键长按 >2000ms 退出页面（finish），短按发送 BACK。
 
 @Composable
 private fun TvRemoteContent(
     card: PanelCard,
     haStates: Map<String, HaEntityState>,
     viewModel: DeviceDetailViewModel,
+    onExit: () -> Unit,
 ) {
+    // 原版 mTv.isPlay：本地播放/暂停状态机
+    var isPlaying by remember { mutableStateOf(false) }
     var numberPadOpen by remember { mutableStateOf(false) }
+    var sourceDialogOpen by remember { mutableStateOf(false) }
+
+    // 原版信号源列表：Tv.source → media_player/select 的 optionList
+    val sources = attrList(card, haStates, "source_list")
+
+    fun togglePlayPause() {
+        // 原版 togglePlayPause：未播放发 PLAY、已播放发 PAUSE，并更新图标
+        viewModel.tvKey(if (isPlaying) "PAUSE" else "PLAY")
+        isPlaying = !isPlaying
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.SpaceEvenly,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            RemoteKey(label = "电源", onClick = { viewModel.tvKey("POWER") })
-            RemoteKey(label = "返回", onClick = { viewModel.tvKey("BACK") })
-            RemoteKey(label = "主页", onClick = { viewModel.tvKey("HOME") })
-            RemoteKey(label = "菜单", onClick = { viewModel.tvKey("MENU") })
+        // 原版 tvTitle：20sp 白色标题
+        Text(
+            text = card.name.ifBlank { "TV" },
+            fontSize = 20.sp,
+            color = RemoteColors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        // 原版 llPower：75×75dp 圆形电源按钮 + 40dp 图标
+        Surface(
+            shape = CircleShape,
+            color = RemoteColors.key,
+            modifier = Modifier
+                .size(75.dp)
+                .clickable { viewModel.tvKey("POWER") }
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(text = "⏻", fontSize = 32.sp, color = RemoteColors.onSurface)
+            }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // D-pad ring (原版 LLTvPlaySelect 方向环)
+            // 方向环（硬件方向键 19/20/21/22 + OK 23 的屏上等价物；
+            // 原版 LongPressKeyHandler(500)：长按 500ms 后连发）
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 RemoteKey(label = "▲", longRepeat = true, onClick = { viewModel.tvKey("UP") })
                 Spacer(Modifier.height(8.dp))
@@ -601,73 +643,205 @@ private fun TvRemoteContent(
                 Spacer(Modifier.height(8.dp))
                 RemoteKey(label = "▼", longRepeat = true, onClick = { viewModel.tvKey("DOWN") })
             }
+
             Spacer(Modifier.width(28.dp))
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                RemoteKey(label = "音量+", longRepeat = true, onClick = { viewModel.tvKey("VOLUME_UP") })
-                RemoteKey(label = "音量−", longRepeat = true, onClick = { viewModel.tvKey("VOLUME_DOWN") })
-                RemoteKey(label = "静音", onClick = { viewModel.tvKey("MUTE") })
+
+            // 原版右侧列：音量半圆 80×75dp + "123" 数字键盘入口 100×55dp
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // rlAndroidTvAddVolume：上半圆
+                Surface(
+                    shape = RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp),
+                    color = RemoteColors.key,
+                    modifier = Modifier
+                        .size(width = 80.dp, height = 75.dp)
+                        .holdRepeat(
+                            onTap = { viewModel.tvKey("VOLUME_UP") },
+                            onRepeat = { viewModel.tvKey("VOLUME_UP") }
+                        )
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(text = "＋", fontSize = 28.sp, color = RemoteColors.onSurface)
+                    }
+                }
+                // rlAndroidTvReduceVolume：下半圆
+                Surface(
+                    shape = RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp),
+                    color = RemoteColors.key,
+                    modifier = Modifier
+                        .size(width = 80.dp, height = 75.dp)
+                        .holdRepeat(
+                            onTap = { viewModel.tvKey("VOLUME_DOWN") },
+                            onRepeat = { viewModel.tvKey("VOLUME_DOWN") }
+                        )
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(text = "－", fontSize = 28.sp, color = RemoteColors.onSurface)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                // 原版 llNumKey：100×55dp "123" 入口，弹出数字键盘
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = RemoteColors.key,
+                    modifier = Modifier
+                        .size(width = 100.dp, height = 55.dp)
+                        .clickable { numberPadOpen = true }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "123",
+                            fontSize = 20.sp,
+                            color = RemoteColors.onSurface
+                        )
+                    }
+                }
             }
         }
 
+        // 原版左列三按钮（100dp 宽、~76dp 高）：主页 / 播放暂停 / 信号源
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            RemoteKey(label = "频道−", longRepeat = true, onClick = { viewModel.tvKey("CHANNEL_DOWN") })
-            RemoteKey(
-                label = "▶ ⏸",
-                onClick = {
-                    // 原版 togglePlayPause：同一键在播放/暂停间切换
-                    viewModel.tvKey("PLAY_PAUSE")
-                }
+            TvPanelButton(label = "主页", onClick = { viewModel.tvKey("HOME") })
+            TvPanelButton(
+                label = if (isPlaying) "暂停" else "播放",
+                onClick = { togglePlayPause() }
             )
-            RemoteKey(label = "频道+", longRepeat = true, onClick = { viewModel.tvKey("CHANNEL_UP") })
-            RemoteKey(label = "数字", onClick = { numberPadOpen = true })
+            if (sources.isNotEmpty()) {
+                TvPanelButton(label = "信号源", onClick = { sourceDialogOpen = true })
+            }
+        }
+
+        // 频道（92/93 连发）+ 返回（BACK：短按发键、长按 >2s 退出）+ 菜单
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            RemoteKey(
+                label = "频−",
+                longRepeat = true,
+                onClick = { viewModel.tvKey("CHANNEL_DOWN") }
+            )
+            // 原版 BACK 键：短按发送 BACK，长按 >2000ms 退出页面（finish）
+            Surface(
+                shape = CircleShape,
+                color = RemoteColors.key,
+                modifier = Modifier
+                    .size(60.dp)
+                    .holdRepeat(
+                        onTap = { viewModel.tvKey("BACK") },
+                        onRepeat = onExit,
+                        initialDelayMs = 2000,
+                        repeatDelayMs = 3_600_000L
+                    )
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "返回",
+                        color = RemoteColors.onSurface,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            RemoteKey(label = "菜单", onClick = { viewModel.tvKey("MENU") })
+            RemoteKey(
+                label = "频+",
+                longRepeat = true,
+                onClick = { viewModel.tvKey("CHANNEL_UP") }
+            )
         }
     }
 
     if (numberPadOpen) {
-        NumberPadDialog(
-            onKey = { key ->
-                viewModel.tvKey(key)
-            },
+        TvNumberPadDialog(
+            onKey = { key -> viewModel.tvKey(key) },
             onDismiss = { numberPadOpen = false }
+        )
+    }
+
+    if (sourceDialogOpen) {
+        OptionPopup(
+            title = "信号源",
+            options = sources.map { it to it },
+            selected = stateOf(card, haStates, "source"),
+            onSelect = { source ->
+                viewModel.mediaSelectSource(source)
+                sourceDialogOpen = false
+            },
+            onDismiss = { sourceDialogOpen = false }
         )
     }
 }
 
+/** 原版左列按钮：100×76dp 圆角底（device_tv_button_style）。 */
 @Composable
-private fun NumberPadDialog(
+private fun TvPanelButton(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = RemoteColors.key,
+        modifier = Modifier
+            .size(width = 100.dp, height = 76.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                fontSize = 16.sp,
+                color = RemoteColors.onSurface,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/**
+ * 原版 TvNumberKeyboardDialog（dialog_tv_number_keyboard.xml）：底部弹出，
+ * 行高 60dp、键间距 4dp、文字 20sp；行序 1-9 / A B C / 删除 0 退格 / ok；
+ * 数字发 NUM_n，ABC 发 KEY_A/B/C，退格发 DELETE，返回发 BACK，
+ * ok 发 CENTER 并关闭。
+ */
+@Composable
+private fun TvNumberPadDialog(
     onKey: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
-        containerColor = RemoteColors.surface,
+        containerColor = RemoteColors.popupBackground,
         title = { Text("数字键盘", color = RemoteColors.onSurface) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val rows = listOf(
-                    listOf("1", "2", "3"),
-                    listOf("4", "5", "6"),
-                    listOf("7", "8", "9"),
-                    listOf("DEL", "0", "OK")
+                    listOf("1" to "NUM_1", "2" to "NUM_2", "3" to "NUM_3"),
+                    listOf("4" to "NUM_4", "5" to "NUM_5", "6" to "NUM_6"),
+                    listOf("7" to "NUM_7", "8" to "NUM_8", "9" to "NUM_9"),
+                    listOf("A" to "KEY_A", "B" to "KEY_B", "C" to "KEY_C"),
+                    listOf("⌫" to "DELETE", "0" to "NUM_0", "↩" to "BACK"),
+                    listOf("ok" to "CENTER")
                 )
                 rows.forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { digit ->
-                            RemoteKey(
-                                label = digit,
-                                size = 56,
-                                onClick = {
-                                    when (digit) {
-                                        "DEL" -> onKey("DELETE")
-                                        "OK" -> onDismiss()
-                                        else -> onKey("NUM_$digit")
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        row.forEach { (label, key) ->
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = RemoteColors.key,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(60.dp)
+                                    .clickable {
+                                        onKey(key)
+                                        if (key == "CENTER") onDismiss()
                                     }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 20.sp,
+                                        color = RemoteColors.onSurface
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 }
@@ -675,6 +849,7 @@ private fun NumberPadDialog(
         }
     )
 }
+
 
 // ── Climate (§3.10.4 ①) — 原版 activity_device_ac.xml + AcControlView ──
 //

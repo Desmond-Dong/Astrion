@@ -287,7 +287,11 @@ class CardController @Inject constructor(
                     21 -> pressTvKey(card, "LEFT")
                     22 -> pressTvKey(card, "RIGHT")
                     23 -> pressTvKey(card, "CENTER")
-                    4 -> pressTvKey(card, "BACK")
+                    4 -> {
+                        // 原版 BACK：短按发送 BACK 键；长按 >2s 退出页面（不连发）
+                        if (!longPress) pressTvKey(card, "BACK")
+                        true
+                    }
                     24 -> pressTvKey(card, "VOLUME_UP")
                     25 -> pressTvKey(card, "VOLUME_DOWN")
                     164 -> pressTvKey(card, "MUTE")
