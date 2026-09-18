@@ -354,33 +354,18 @@ class CardController @Inject constructor(
             }
 
             PanelCardTypes.LIGHT -> {
-                val brightness = haStatesStore.states.value["$entityId.brightness"]
-                    ?.state?.toFloatOrNull()
+                // 原版 LightControlView：24/25 = 亮度 ±1%（按键重复 + 100ms 节流），
+                // 132 = 电源开关；其余键不消费（原版直接透传系统）。
+                val pct = haStatesStore.states.value["$entityId.brightness"]
+                    ?.state?.toFloatOrNull()?.div(2.55f)
                 when (keyCode) {
-                    24 -> {
-                        lightTurnOn(entityId, brightnessPct = ((brightness ?: 0f) + if (large) 5f else 1f).toInt()); true
-                    }
-
-                    25 -> {
-                        lightTurnOn(entityId, brightnessPct = ((brightness ?: 100f) - if (large) 5f else 1f).toInt()); true
-                    }
-
-                    // 色温 ±:短按 ±50K,长按 ±250K（原版 92/93=色温仅灯支持时消费）
-                    92, 93 -> {
-                        val kelvin = haStatesStore.states.value["$entityId.color_temp_kelvin"]
-                            ?.state?.toIntOrNull()
-                        if (kelvin == null) {
-                            false
+                    24, 25 -> {
+                        if (state != "on") {
+                            true // 原版：关灯时按键被消费但不动作
                         } else {
-                            val step = if (large) 250 else 50
-                            val next = (kelvin + if (keyCode == 93) step else -step)
-                                .coerceIn(
-                                    haStatesStore.states.value["$entityId.min_color_temp_kelvin"]
-                                        ?.state?.toIntOrNull() ?: 2000,
-                                    haStatesStore.states.value["$entityId.max_color_temp_kelvin"]
-                                        ?.state?.toIntOrNull() ?: 6500
-                                )
-                            lightTurnOn(entityId, kelvin = next)
+                            val delta = if (keyCode == 24) 1f else -1f
+                            val next = ((pct ?: 0f) + delta).coerceIn(0f, 100f).toInt()
+                            lightTurnOn(entityId, brightnessPct = next)
                             true
                         }
                     }
