@@ -391,28 +391,12 @@ class CardController @Inject constructor(
             }
 
             PanelCardTypes.COVER -> when (keyCode) {
-                24, 25 -> {
-                    // 位置步进：短按 ±1,长按 ±5（原版 窗帘 24/25）
-                    val position = haStatesStore.states.value["$entityId.current_position"]
-                        ?.state?.toIntOrNull()
-                    val step = if (large) 5 else 1
-                    coverSetPosition(entityId, (position ?: 50) + if (keyCode == 24) step else -step)
-                    true
-                }
-
-                92, 93 -> {
-                    // 翻转步进：92/93（原版 窗帘翻转）
-                    val tilt = haStatesStore.states.value["$entityId.current_tilt_position"]
-                        ?.state?.toIntOrNull()
-                    val step = if (large) 5 else 1
-                    coverSetTiltPosition(entityId, (tilt ?: 50) + if (keyCode == 92) step else -step)
-                    true
-                }
-
+                // 原版 CurtainActivity.dispatchKeyEvent：只消费 132（开/关切换，
+                // keyControl0penOrClose 按 openFlag 翻转）与 23（停止）；
+                // 其余键透传系统（返回 false 落到音量回退）。
                 132 -> {
                     if (large) false
                     else {
-                        // Toggle open/close on the power key, stop on OK (原版 ①⑤)
                         if (state == "open") coverClose(entityId) else coverOpen(entityId); true
                     }
                 }
