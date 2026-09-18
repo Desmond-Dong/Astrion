@@ -92,6 +92,7 @@ class PanelViewModel @Inject constructor(
     private val satelliteStateHolder: SatelliteStateHolder,
     private val microphoneSettingsStore: com.example.astrion.settings.MicrophoneSettingsStore,
     private val displaySettingsStore: com.example.astrion.settings.DisplaySettingsStore,
+    private val screenOffController: com.example.astrion.services.ScreenOffController,
 ) : ViewModel() {
     val layout = panelConfigStore.layout
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PanelLayout())
@@ -120,6 +121,8 @@ class PanelViewModel @Inject constructor(
     }
 
     fun refreshDevices() = satelliteStateHolder.reconnect()
+
+    fun screenOff() = screenOffController.turnScreenOffNow()
 
     fun setMicMuted(muted: Boolean) {
         viewModelScope.launch { micMuted.set(muted) }
@@ -304,6 +307,7 @@ fun PanelHomeScreen(
                 screenSaverTimeout = screenSaverTimeout,
                 onScreenSaverTimeoutChanged = { viewModel.setScreenSaverTimeout(it) },
                 onRefreshDevices = { viewModel.refreshDevices() },
+                onScreenOff = { viewModel.screenOff() },
                 onOpenShortcutKeys = { navController.navigate(ShortcutKeysRoute) },
                 onOpenSettings = {
                     context.startActivity(

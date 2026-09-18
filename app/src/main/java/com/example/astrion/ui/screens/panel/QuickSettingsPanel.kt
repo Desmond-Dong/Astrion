@@ -191,6 +191,20 @@ fun QuickSettingsPanel(
             }
             Spacer(Modifier.height(6.dp))
 
+            // 息屏（原版 ScreenOffSettings：按键/无操作后背光全灭）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onScreenOff)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("息屏", color = RemoteColors.onSurface, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                Text("立即 →", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(6.dp))
+
             // 抬手唤醒（原版 rlWake）
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("抬手唤醒", color = RemoteColors.onSurface, fontSize = 14.sp)
