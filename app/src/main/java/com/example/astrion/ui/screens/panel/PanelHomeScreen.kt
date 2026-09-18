@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -246,7 +247,7 @@ fun PanelHomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(RemoteBackground)
+            .background(Color.Black)
             .topEdgeSwipeToOpen(enabled = !quickSettingsOpen) { quickSettingsOpen = true }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -519,91 +520,88 @@ private fun DeviceCard(
     stateText: String,
     onClick: () -> Unit,
 ) {
-    val accent = cardAccent(card.resolvedType)
+    // 原版 index_device_*_item：纯黑底、居中 50dp 原版彩色状态图标
+    // (alpha 0.8)、下方灰名、左侧小白点表示开启。
     val isOn = stateText.contains("开启") || stateText.contains("打开") ||
         stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
     val isOffline = stateText.contains("不可用") || stateText.contains("unavailable")
+    val iconRes = stateIconRes(card.resolvedType, isOn)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(134.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (isOn) RemoteColors.deviceOn else RemoteColors.surface)
+            .height(155.dp)
             .clickable(onClick = onClick)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = card.resolvedType,
                 modifier = Modifier
                     .size(50.dp)
-                    .background(
-                        Brush.linearGradient(accent),
-                        RoundedCornerShape(14.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(cardIconRes(card.resolvedType)),
-                    contentDescription = card.resolvedType,
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            Column {
-                Text(
-                    text = name,
-                    color = RemoteColors.onSurface,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(3.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isOffline) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(RemoteColors.error, CircleShape)
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(text = "离线", color = RemoteColors.error, fontSize = 12.sp)
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(
-                                    color = if (isOn) RemoteColors.secondary else RemoteColors.outline,
-                                    shape = CircleShape
-                                )
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            text = stateText.ifBlank { " " },
-                            color = RemoteColors.hintText,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
+                    .alpha(0.8f)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = name,
+                color = Color(0xFFBFBDBD),
+                fontSize = 16.sp,
+                lineHeight = 20.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.height(40.dp)
+            )
         }
         if (isOn) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(RemoteColors.secondary)
+                    .size(4.dp)
+                    .align(Alignment.CenterStart)
+                    .padding(start = 13.dp, bottom = 5.dp)
+                    .background(Color.White, CircleShape)
             )
         }
+        if (isOffline) {
+            Text(
+                text = "设备已离线",
+                color = Color(0xFFBFBDBD),
+                fontSize = 15.sp,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+        if (card.resolvedType == PanelCardTypes.LIGHT) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 8.dp, end = 15.dp)
+                    .clickable(onClick = onClick),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "亮度", color = Color(0xFFBFBDBD), fontSize = 10.sp)
+                Spacer(Modifier.width(4.dp))
+                Text(text = "色温", color = Color(0xFFBFBDBD), fontSize = 10.sp)
+            }
+        }
     }
+}
+
+/** 原版两态图标：开=彩色 on 图标，关=灰色 off 图标。 */
+private fun stateIconRes(type: String, isOn: Boolean): Int {
+    val pair = when (type) {
+        PanelCardTypes.LIGHT -> R.drawable.ic_state_light_on to R.drawable.ic_state_light_off
+        PanelCardTypes.CLIMATE -> R.drawable.ic_state_climate_on to R.drawable.ic_state_climate_off
+        PanelCardTypes.COVER -> R.drawable.ic_state_cover_on to R.drawable.ic_state_cover_off
+        PanelCardTypes.FAN -> R.drawable.ic_state_fan_on to R.drawable.ic_state_fan_off
+        PanelCardTypes.MEDIA_PLAYER -> R.drawable.ic_state_media_on to R.drawable.ic_state_media_off
+        PanelCardTypes.SWITCH -> R.drawable.ic_state_switch_on to R.drawable.ic_state_switch_off
+        PanelCardTypes.TV -> R.drawable.ic_state_tv_on to R.drawable.ic_state_tv_off
+        else -> R.drawable.ic_state_default to R.drawable.ic_state_default
+    }
+    return if (isOn) pair.first else pair.second
 }
 
 @Composable
