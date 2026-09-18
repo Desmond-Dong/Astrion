@@ -298,6 +298,16 @@ class CardController @Inject constructor(
                     92 -> pressTvKey(card, "CHANNEL_UP")
                     93 -> pressTvKey(card, "CHANNEL_DOWN")
                     82 -> pressTvKey(card, "MENU")
+                    132 -> pressTvKey(card, "POWER")
+                    // 原版 initKeyMap：134-141 = F4-F11（send_command 键名）
+                    134 -> pressTvKey(card, "F4")
+                    135 -> pressTvKey(card, "F5")
+                    136 -> pressTvKey(card, "F6")
+                    137 -> pressTvKey(card, "F7")
+                    138 -> pressTvKey(card, "F8")
+                    139 -> pressTvKey(card, "F9")
+                    140 -> pressTvKey(card, "F10")
+                    141 -> pressTvKey(card, "F11")
                     else -> return false
                 }
                 true
