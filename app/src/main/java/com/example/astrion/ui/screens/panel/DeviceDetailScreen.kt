@@ -1,6 +1,7 @@
 package com.example.astrion.ui.screens.panel
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,8 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,7 +45,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1121,7 +1124,20 @@ private fun ChipRow(
     }
 }
 
-// ── Light (§3.10.4 ⑧) ──────────────────────────────────────────────────
+// ── Light (§3.10.4 ⑧) — 原版 activity_device_light.xml + LightControlView ──
+//
+// 布局（原版 dp 值）：顶部 60×60dp 电源开关（marginTop 10，居中）；面板左右
+// 边距 16dp：亮度区 marginTop 20（百分比 55sp 白色大字 + 80dp 高亮度条，
+// marginTop 20）；三入口行 marginTop 40，等权重三列（60×60dp 圆角图标块 +
+// 20sp 白色标签：白光 / 彩光 / 效果）。
+//
+// 子页（原版 LightColorTempActivity / LightRgbActivity / LightEffectActivity）：
+// 竖直取色区 500dp 高（左右边距 20、上 40、下 50），底部 50dp 返回栏（#A0000000）。
+//
+// 逻辑（原版 LightControlView）：亮度拖动 100ms 节流、松手精确下发
+// （ThrottlerUtil(100)，pct→255 换算）；电源切换 300ms 防抖、挂起期间开关禁用；
+// 关机时面板 alpha 0.5 且三入口禁用（refreshPowerStatusToUI）；色温/彩光子页
+// 拖动 300ms 节流 + 松手精确发送（ThrottlerUtil(300)）；效果点击即发送。
 
 @Composable
 private fun LightContent(
@@ -1132,185 +1148,411 @@ private fun LightContent(
     val state = stateOf(card, haStates) ?: "off"
     val isOn = state == "on"
 
-    // 能力联动 (§3.10.4 ⑧⑨⑩): what the entity supports decides what shows —
-    // color temp / color controls appear only when the light supports them.
+    // 能力联动：色温 / 彩色 / 效果入口按实体支持情况显示（原版 updateUIVisibility）
     val supportedModes = stateOf(card, haStates, "supported_color_modes") ?: ""
     val supportsColorTemp = supportedModes.contains("color_temp")
     val supportsColor = listOf("hs", "rgb", "rgbw", "rgbww", "xy").any { supportedModes.contains(it) }
-    val kelvinNow = stateOf(card, haStates, "color_temp_kelvin")?.toFloatOrNull()
     val minKelvin = stateOf(card, haStates, "min_color_temp_kelvin")?.toFloatOrNull() ?: 2000f
     val maxKelvin = stateOf(card, haStates, "max_color_temp_kelvin")?.toFloatOrNull() ?: 6500f
+    val kelvinNow = stateOf(card, haStates, "color_temp_kelvin")?.toFloatOrNull()
     val effects = attrList(card, haStates, "effect_list")
     val currentEffect = stateOf(card, haStates, "effect")
+    val brightnessAttr = stateOf(card, haStates, "brightness")?.toFloatOrNull()?.div(2.55f) ?: 0f
 
-    val brightness = stateOf(card, haStates, "brightness")?.toFloatOrNull()?.div(2.55f) ?: 0f
-    val brightnessDisplay = remember(brightness) { mutableStateOf(brightness) }
+    val scope = rememberCoroutineScope()
+
+    // 亮度：拖动 100ms 节流，松手精确下发（原版 ThrottlerUtil(100)）
+    val brightnessDisplay = remember(brightnessAttr) { mutableStateOf(brightnessAttr) }
     val brightnessThrottle = rememberValueThrottle<Float>(
         send = { v -> viewModel.lightOn(brightnessPct = v.toInt()) },
         intervalMs = 100
     )
 
-    val kelvinDisplay = remember(minKelvin, maxKelvin, kelvinNow) {
-        mutableStateOf(kelvinNow ?: ((minKelvin + maxKelvin) / 2f))
-    }
-    val kelvinThrottle = rememberValueThrottle<Float>(
-        send = { v -> viewModel.lightOn(kelvin = v.toInt()) },
-        intervalMs = 300
-    )
-
-    // RGB 2D 取色器：垂直色相渐变，拖动 300ms 节流（原版 LightRgbActivity）
-    val hueNow = remember { mutableStateOf(0f) }
-    val rgbThrottle = rememberValueThrottle<Float>(
-        send = { h ->
-            val rgb = android.graphics.Color.HSVToColor(floatArrayOf(h, 1f, 1f))
-            viewModel.lightOn(
-                rgb = listOf(
-                    android.graphics.Color.red(rgb),
-                    android.graphics.Color.green(rgb),
-                    android.graphics.Color.blue(rgb)
-                )
-            )
-        },
-        intervalMs = 300
-    )
-
-    // 电源 300ms 防抖（原版 mSwitchDebounceRunnable）
-    val scope = rememberCoroutineScope()
-    var powerPending by remember { mutableStateOf<Boolean?>(null) }
+    // 电源 300ms 防抖（原版 mSwitchDebounceRunnable），挂起期间开关禁用
     var powerJob by remember { mutableStateOf<Job?>(null) }
     fun requestPower(on: Boolean) {
-        powerPending = on
-        powerJob?.cancel()
+        if (powerJob?.isActive == true) return
         powerJob = scope.launch {
             delay(300)
-            val v = powerPending ?: return@launch
-            if (v) viewModel.lightOn() else viewModel.lightOff()
+            powerJob = null
+            if (on) viewModel.lightOn() else viewModel.lightOff()
         }
     }
 
-    val alpha = if (isOn) 1f else 0.5f
+    // 子页状态：null=主面板，"colorTemp"/"rgb"/"effect"=对应子页（原版跳转 Activity）
+    var subPage by remember { mutableStateOf<String?>(null) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("电源", color = RemoteColors.onSurface, fontSize = 16.sp)
-            Spacer(Modifier.weight(1f))
-            Switch(
-                checked = isOn,
-                enabled = powerJob == null,
-                onCheckedChange = { requestPower(it) }
-            )
-        }
+    val panelAlpha = if (isOn) 1f else 0.5f // 原版 refreshPowerStatusToUI
 
-        Column(modifier = Modifier.alpha(alpha)) {
-            Text(
-                text = "亮度 ${brightnessDisplay.value.toInt()}%",
-                color = RemoteColors.onSurface,
-                fontSize = 15.sp
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 原版 imgSwitchView：60×60dp 电源开关，marginTop 10
+            DevicePowerSwitch(
+                isOn = isOn,
+                onRes = R.drawable.ic_state_light_on,
+                offRes = R.drawable.ic_state_light_off,
+                onToggle = { requestPower(it) }
             )
-            NativeSlider(
-                value = brightnessDisplay.value,
-                onDrag = { v ->
-                    brightnessDisplay.value = v
-                    brightnessThrottle.onDrag(v)
-                },
-                onCommit = { v ->
-                    brightnessDisplay.value = v
-                    brightnessThrottle.onCommit(v)
-                },
-                valueRange = 0f..100f,
-                enabled = isOn
-            )
-        }
 
-        if (supportsColorTemp) {
-            Column(modifier = Modifier.alpha(alpha)) {
-                Text(
-                    text = "色温 ${kelvinDisplay.value.toInt()}K",
-                    color = RemoteColors.onSurface,
-                    fontSize = 15.sp
-                )
+            Spacer(Modifier.height(20.dp)) // 原版亮度区 marginTop 20
+
+            // 白光亮度：百分比大字（数字 55sp + % 小字）+ 80dp 高亮度条
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp) // 原版 rlPanel0 marginLeft/Right 16
+                    .alpha(panelAlpha)
+            ) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Spacer(Modifier.width(24.dp))
+                    Text(
+                        text = "${brightnessDisplay.value.toInt()}",
+                        fontSize = 55.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = RemoteColors.onSurface
+                    )
+                    Text(
+                        text = "%",
+                        fontSize = 17.sp, // 原版 Spannable 100:30 比例
+                        color = RemoteColors.onSurface
+                    )
+                    Spacer(Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(20.dp))
                 NativeSlider(
-                    value = kelvinDisplay.value,
+                    value = brightnessDisplay.value,
                     onDrag = { v ->
-                        kelvinDisplay.value = v
-                        kelvinThrottle.onDrag(v)
+                        brightnessDisplay.value = v
+                        brightnessThrottle.onDrag(v)
                     },
                     onCommit = { v ->
-                        kelvinDisplay.value = v
-                        kelvinThrottle.onCommit(v)
+                        brightnessDisplay.value = v
+                        brightnessThrottle.onCommit(v)
                     },
-                    valueRange = minKelvin..maxKelvin,
-                    enabled = isOn
+                    valueRange = 0f..100f,
+                    enabled = isOn,
+                    thickness = 28.dp,
+                    thumbSize = 80.dp, // 原版亮度条高度 80dp（触控区同高）
+                    thumbColor = Color.Transparent,
+                    activeColor = Color(0xFFC8A96E) // 原版 slider_accent
                 )
-                Row {
-                    Text("暖 ${minKelvin.toInt()}K", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
-                    Spacer(Modifier.weight(1f))
-                    Text("冷 ${maxKelvin.toInt()}K", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
+            }
+
+            Spacer(Modifier.height(40.dp)) // 原版三入口行 marginTop 40
+
+            // 三入口：白光（色温）/ 彩光（RGB）/ 效果，等权重三列
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(panelAlpha)
+            ) {
+                if (supportsColorTemp) {
+                    LightModeEntry(
+                        label = "白光",
+                        glyph = "◎",
+                        enabled = isOn,
+                        onClick = { subPage = "colorTemp" },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (supportsColor) {
+                    LightModeEntry(
+                        label = "彩光",
+                        glyph = "❋",
+                        enabled = isOn,
+                        onClick = { subPage = "rgb" },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (effects.isNotEmpty()) {
+                    LightModeEntry(
+                        label = "效果",
+                        glyph = "✦",
+                        enabled = isOn,
+                        onClick = { subPage = "effect" },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
 
-        if (supportsColor) {
-            val hueStops = listOf(0, 60, 120, 180, 240, 300, 360)
-                .map { h -> Color.hsv(h.toFloat(), 1f, 1f) }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.alpha(alpha)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "颜色 (色相 ${hueNow.value.toInt()}°)",
-                        color = RemoteColors.onSurface,
-                        fontSize = 15.sp
+        // 子页覆盖层（原版跳转 Activity，此处就地覆盖展示）
+        when (subPage) {
+            "colorTemp" -> {
+                val kelvinDisplay = remember(minKelvin, maxKelvin, kelvinNow) {
+                    mutableStateOf(kelvinNow ?: ((minKelvin + maxKelvin) / 2f))
+                }
+                val kelvinThrottle = rememberValueThrottle<Float>(
+                    send = { v -> viewModel.lightOn(kelvin = v.toInt()) },
+                    intervalMs = 300
+                )
+                LightSubPageOverlay(onBack = { subPage = null }) {
+                    VerticalValuePicker(
+                        value = kelvinDisplay.value,
+                        valueRange = minKelvin..maxKelvin,
+                        topLabel = "${maxKelvin.toInt()}K",
+                        bottomLabel = "${minKelvin.toInt()}K",
+                        brush = Brush.verticalGradient(
+                            listOf(Color(0xFFD9F2FF), Color(0xFFFFE3B8))
+                        ),
+                        onDrag = { v ->
+                            kelvinDisplay.value = v
+                            kelvinThrottle.onDrag(v)
+                        },
+                        onCommit = { v ->
+                            kelvinDisplay.value = v
+                            kelvinThrottle.onCommit(v)
+                        }
                     )
-                    Row {
-                        Text("红", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
-                        Spacer(Modifier.weight(1f))
-                        Text("紫", color = RemoteColors.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+
+            "rgb" -> {
+                val hueDisplay = remember { mutableStateOf(0f) }
+                val rgbThrottle = rememberValueThrottle<Float>(
+                    send = { h ->
+                        val rgb = android.graphics.Color.HSVToColor(floatArrayOf(h, 1f, 1f))
+                        viewModel.lightOn(
+                            rgb = listOf(
+                                android.graphics.Color.red(rgb),
+                                android.graphics.Color.green(rgb),
+                                android.graphics.Color.blue(rgb)
+                            )
+                        )
+                    },
+                    intervalMs = 300
+                )
+                LightSubPageOverlay(onBack = { subPage = null }) {
+                    VerticalValuePicker(
+                        value = hueDisplay.value,
+                        valueRange = 0f..360f,
+                        topLabel = null,
+                        bottomLabel = null,
+                        brush = Brush.verticalGradient(
+                            listOf(0, 60, 120, 180, 240, 300, 360).map {
+                                Color.hsv(it.toFloat(), 1f, 1f)
+                            }
+                        ),
+                        onDrag = { v ->
+                            hueDisplay.value = v
+                            rgbThrottle.onDrag(v)
+                        },
+                        onCommit = { v ->
+                            hueDisplay.value = v
+                            rgbThrottle.onCommit(v)
+                        }
+                    )
+                }
+            }
+
+            "effect" -> {
+                LightSubPageOverlay(onBack = { subPage = null }) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(effects) { effect ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (effect == currentEffect) {
+                                    RemoteColors.accent
+                                } else {
+                                    RemoteColors.key
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.lightEffect(effect) }
+                            ) {
+                                Text(
+                                    text = effect,
+                                    fontSize = 18.sp,
+                                    color = RemoteColors.onSurface,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                                )
+                            }
+                        }
                     }
                 }
-                NativeSlider(
-                    value = hueNow.value / 3.6f,
-                    onDrag = { v ->
-                        val h = v * 3.6f
-                        hueNow.value = h
-                        rgbThrottle.onDrag(h)
-                    },
-                    onCommit = { v ->
-                        val h = v * 3.6f
-                        hueNow.value = h
-                        rgbThrottle.onCommit(h)
-                    },
-                    vertical = true,
-                    axisLength = 170.dp,
-                    thickness = 18.dp,
-                    trackBrush = Brush.horizontalGradient(hueStops),
-                    activeColor = Color.Transparent,
-                    thumbColor = Color.White,
-                    thumbSize = 24.dp,
-                    enabled = isOn
-                )
-            }
-        }
-
-        if (effects.isNotEmpty()) {
-            Column(modifier = Modifier.alpha(alpha)) {
-                Text("特效", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-                ChipRow(
-                    options = effects.map { it to it },
-                    selected = currentEffect,
-                    enabled = isOn,
-                    onSelect = { viewModel.lightEffect(it) }
-                )
             }
         }
     }
 }
+
+/** 原版三入口项：60×60dp 圆角图标块 + 20sp 白色标签（light_color_item_bg）。 */
+@Composable
+private fun LightModeEntry(
+    label: String,
+    glyph: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = RemoteColors.key,
+            modifier = Modifier
+                .size(60.dp)
+                .clickable(enabled = enabled, onClick = onClick)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = glyph,
+                    fontSize = 28.sp,
+                    color = RemoteColors.onSurface
+                )
+            }
+        }
+        Text(
+            text = label,
+            fontSize = 20.sp,
+            color = RemoteColors.onSurface,
+            modifier = Modifier.padding(bottom = 2.dp) // 原版 paddingBottom 2
+        )
+    }
+}
+
+/**
+ * 原版子页框架（activity_light_color_temp / _rgb / _effect）：取色区 500dp 高、
+ * 左右边距 20、上 40；底部 50dp 返回栏（#A0000000）。
+ */
+@Composable
+private fun LightSubPageOverlay(
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RemoteBackground)
+    ) {
+        Spacer(Modifier.height(40.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .height(500.dp)
+        ) {
+            content()
+        }
+        Spacer(Modifier.weight(1f))
+        Surface(
+            color = Color(0xA0000000), // 原版 BackView 背景
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp) // 原版返回栏高度 50dp
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        painter = painterResource(R.drawable.arrow_back_24px),
+                        contentDescription = "返回",
+                        tint = RemoteColors.onSurface
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 竖直取色器（原版 ViewColorTempPickerVertical / ViewColorPickerVertical）：
+ * 顶部为 range 上界、底部为下界，拖动连续回调，松手精确回调一次。
+ */
+@Composable
+private fun VerticalValuePicker(
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    topLabel: String?,
+    bottomLabel: String?,
+    brush: Brush,
+    onDrag: (Float) -> Unit,
+    onCommit: (Float) -> Unit,
+) {
+    var heightPx by remember { mutableStateOf(0) }
+    val fraction = ((value - valueRange.start) /
+        (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(500.dp)
+            .onSizeChanged { heightPx = it.height }
+            .clip(RoundedCornerShape(24.dp))
+            .background(brush)
+            .pointerInput(valueRange) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    fun valueAt(y: Float): Float {
+                        val h = if (heightPx > 0) heightPx.toFloat() else 1f
+                        val f = (y / h).coerceIn(0f, 1f)
+                        return valueRange.endInclusive - f *
+                            (valueRange.endInclusive - valueRange.start)
+                    }
+                    var last = valueAt(down.position.y)
+                    onDrag(last)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) {
+                            onCommit(last)
+                            change.consume()
+                            break
+                        }
+                        if (change.position != change.previousPosition) {
+                            last = valueAt(change.position.y)
+                            onDrag(last)
+                        }
+                        change.consume()
+                    }
+                }
+            }
+    ) {
+        // 当前值指示圈（原版滑块）
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .graphicsLayer {
+                    translationY = ((heightPx - 44.dp.toPx()) * (1f - fraction))
+                        .coerceIn(0f, (heightPx - 44.dp.toPx()).coerceAtLeast(0f))
+                }
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.85f))
+                .border(3.dp, Color(0xFF2B2B2B), CircleShape)
+        )
+        if (topLabel != null) {
+            Text(
+                text = topLabel,
+                fontSize = 14.sp,
+                color = Color(0xFF2B2B2B),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+            )
+        }
+        if (bottomLabel != null) {
+            Text(
+                text = bottomLabel,
+                fontSize = 14.sp,
+                color = Color(0xFF2B2B2B),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+            )
+        }
+    }
+}
+
 
 // ── Fan (§3.10.4 ④) ────────────────────────────────────────────────────
 
