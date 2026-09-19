@@ -422,7 +422,7 @@ class DeviceBuilder @Inject constructor(
         return buildList {
             // 布局不再走 text 实体（HA 对 text 值限 255 字符），改由模板
             // sensor `sensor.astrion_layout` 的 `layout` 属性传输（见
-            // TRANSPORT_LAYOUT_ID / blueprints/template/astrion_panel_layout.yaml）。
+            // TRANSPORT_LAYOUT_ID / blueprints/automation/astrion_panel_layout.yaml）。
             // IR codebook 仍为单 text 实体（JSON 较短）。
             add(
                 TextEntity(

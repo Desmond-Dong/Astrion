@@ -29,7 +29,7 @@
 ## 3. 房间与设备：`astrion_layout`（模板蓝图，零手写）
 
 **自动布局（推荐）**：在 HA 里导入本仓库的模板蓝图
-`blueprints/template/astrion_panel_layout.yaml`（设置 → 设备与服务 → 模板 →
+`blueprints/automation/astrion_panel_layout.yaml`（设置 → 设备与服务 → 模板 →
 右下角"下载蓝图"粘贴该文件的 GitHub 链接）。填入设备时：
 
 1. **像原版卡片设置一样按类别勾选设备**——灯、开关、空调、窗帘、风扇、媒体

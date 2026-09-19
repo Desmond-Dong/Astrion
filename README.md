@@ -22,7 +22,7 @@ Home Assistant 通过 ESPHome 集成一键采纳；房间布局、IR 码库、HA
 家里设备自动按房间分组显示在面板上，不用写任何配置：
 
 1. 复制这个链接：
-   `https://raw.githubusercontent.com/Desmond-Dong/Astrion-ESPHome/master/blueprints/template/astrion_panel_layout.yaml`
+   `https://raw.githubusercontent.com/Desmond-Dong/Astrion-ESPHome/master/blueprints/automation/astrion_panel_layout.yaml`
 2. Home Assistant → 设置 → 设备与服务 → 模板 → **右下角添加 → 下载蓝图**（或直接把链接贴进"导入"）
 3. 按类别勾选想出现在面板上的设备（灯/开关/空调/窗帘/媒体播放器…，可多选），保存
 4. 把刚生成的 `sensor.astrion_layout` 加入 ESPHome 面板设备的订阅（选 `sensor.astrion_layout.layout` 属性）
