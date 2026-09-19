@@ -1341,6 +1341,10 @@ private fun LightContent(
     val supportedModes = stateOf(card, haStates, "supported_color_modes") ?: ""
     val supportsColorTemp = supportedModes.contains("color_temp")
     val supportsColor = listOf("hs", "rgb", "rgbw", "rgbww", "xy").any { supportedModes.contains(it) }
+    // 可调光=supported_color_modes 含 brightness（HA 语义，纯开关灯为 ["onoff"]）；
+    // 模式为空时按状态里是否带 brightness 推出（原版 supportBrightness 同规则）。
+    val supportsBrightness = supportedModes.contains("brightness") ||
+        (supportedModes.isBlank() && stateOf(card, haStates, "brightness") != null)
     val minKelvin = stateOf(card, haStates, "min_color_temp_kelvin")?.toFloatOrNull() ?: 2000f
     val maxKelvin = stateOf(card, haStates, "max_color_temp_kelvin")?.toFloatOrNull() ?: 6500f
     val kelvinNow = stateOf(card, haStates, "color_temp_kelvin")?.toFloatOrNull()
@@ -1386,15 +1390,16 @@ private fun LightContent(
                 onToggle = { requestPower(it) }
             )
 
-            Spacer(Modifier.height(20.dp)) // 原版亮度区 marginTop 20
-
             // 白光亮度：百分比大字（数字 55sp + % 小字）+ 80dp 高亮度条
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp) // 原版 rlPanel0 marginLeft/Right 16
-                    .alpha(panelAlpha)
-            ) {
+            // 仅可调光灯显示（原版 updateUIVisibility: isSupportBrightness 才显示）
+            if (supportsBrightness) {
+                Spacer(Modifier.height(20.dp)) // 原版亮度区 marginTop 20
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp) // 原版 rlPanel0 marginLeft/Right 16
+                        .alpha(panelAlpha)
+                ) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Spacer(Modifier.width(24.dp))
                     Text(
@@ -1428,6 +1433,7 @@ private fun LightContent(
                     thumbColor = Color.Transparent,
                     activeColor = Color(0xFFC8A96E) // 原版 slider_accent
                 )
+                }
             }
 
             Spacer(Modifier.height(40.dp)) // 原版三入口行 marginTop 40
