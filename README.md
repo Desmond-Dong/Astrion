@@ -17,18 +17,20 @@ Home Assistant 通过 ESPHome 集成一键采纳；房间布局、IR 码库、HA
 电视遥控（方向环/数字键盘）、空调（温度/模式/风速）、灯光（亮度/色温）、风扇
 档位、窗帘（开停关）、媒体播放、开关/场景、天气等原生设备详情页。
 
-## 一键布局（蓝图导入，零手写）
+## 一键布局（模板蓝图导入，零手写）
 
 家里设备自动按房间分组显示在面板上，不用写任何配置：
 
 1. 复制这个链接：
-   `https://raw.githubusercontent.com/Desmond-Dong/Astrion-ESPHome/master/blueprints/automation/astrion_panel_layout.yaml`
-2. Home Assistant → 设置 → 自动化与场景 → 蓝图 → 右下角 **导入蓝图** → 粘贴链接
-3. 创建自动化：按类别勾选想出现在面板上的设备（灯/开关/空调/窗帘/媒体播放器…，可多选），选择面板的 **Panel Layout** 实体，保存
+   `https://raw.githubusercontent.com/Desmond-Dong/Astrion-ESPHome/master/blueprints/template/astrion_panel_layout.yaml`
+2. Home Assistant → 设置 → 设备与服务 → 模板 → **右下角添加 → 下载蓝图**（或直接把链接贴进"导入"）
+3. 按类别勾选想出现在面板上的设备（灯/开关/空调/窗帘/媒体播放器…，可多选），保存
+4. 把刚生成的 `sensor.astrion_layout` 加入 ESPHome 面板设备的订阅（选 `sensor.astrion_layout.layout` 属性）
 
-面板自动按家里的房间分组、设备沿用 HA 名称；HA 重启、每天凌晨 4 点、设备变动时
-自动刷新。物理按键的"一键直达"在遥控器上绑定：下拉面板 → 快捷键绑定，
-从同步过来的设备里任选一台。
+面板自动按家里的房间分组、设备沿用 HA 名称；勾选变更、HA 重启、每天凌晨 4 点、
+设备变动时自动刷新。布局完整存放在模板 sensor 的 `layout` 属性里，不受 HA
+255 字符状态限制，也不经过任何 text 实体。物理按键的"一键直达"在遥控器上绑定：
+下拉面板 → 快捷键绑定，从同步过来的设备里任选一台。
 
 # 功能
 
@@ -75,7 +77,8 @@ Home Assistant 通过 ESPHome 集成一键采纳；房间布局、IR 码库、HA
 # Setup
 - 安装并运行 App，服务自动启动（无任何 App 内设置）
 - Home Assistant → ESPHome 集成采纳设备（或手动 IP + 端口 6053）
-- 将布局 JSON 写入 `text.astrion_layout`，IR 码库写入 `text.astrion_ir_codes`，
+- 布局经模板 `sensor.astrion_layout` 的 `layout` 属性下发（见 [一键布局](#一键布局模板蓝图导入零手写)），
+  IR 码库写入 `text.astrion_ir_codes`，
 - 详见 [配置指南](docs/HA_PANEL_SETUP.md)（含 JSON schema、按键码表、自动化示例、
   语音/降噪实体说明）
 

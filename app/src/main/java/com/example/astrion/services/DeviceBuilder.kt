@@ -148,10 +148,9 @@ class DeviceBuilder @Inject constructor(
             entities = buildEntities(coroutineContext, voiceOutput, deviceHolder, scope),
             haStatesStore = haStatesStore,
             getHaSyncedEntityIds = {
-                // The fixed transport sensor carries layouts of ANY length:
-                // HA template sensors have no 255-char state cap like text
-                // entities do.
-                panelConfigStore.syncEntities.first() + TRANSPORT_SENSOR_ID
+                // 布局经模板 sensor 的 `layout` 属性传输（HA 对 sensor 状态
+                // 限 255 字符，但属性不受限；不新增/依赖任何 text 实体）。
+                panelConfigStore.syncEntities.first() + TRANSPORT_LAYOUT_ID
             },
             haActionBus = haActionBus
         )
@@ -168,11 +167,11 @@ class DeviceBuilder @Inject constructor(
         val keyAllocator = EntityKeyAllocator(0)
         val entities = mutableListOf<Entity>()
 
-        // A template sensor named sensor.astrion_layout is the unlimited
-        // transport for layouts: HA computes its state (no 255-char text
-        // cap) and the panel parses it exactly like the text entity form.
+        // 布局传输：模板 sensor `sensor.astrion_layout` 的 `layout` 属性。
+        // 属性不受 HA 255 字符状态限制，ContentAddr 订阅实体.attribute 即可
+        // 收到任意长度布局，App 照 text 实体同样格式解析应用。
         haStatesStore.states
-            .map { states -> states[TRANSPORT_SENSOR_ID]?.state?.takeIf { it.isNotBlank() } }
+            .map { states -> states[TRANSPORT_LAYOUT_ID]?.state?.takeIf { it.isNotBlank() } }
             .filterNotNull()
             .distinctUntilChanged()
             .onEach { state ->
@@ -421,16 +420,10 @@ class DeviceBuilder @Inject constructor(
     ): List<Entity> {
         val config = panelConfigStore.raw.first()
         return buildList {
-            // 单实体：手写一行式布局（分号分隔），短内容走这里
-            add(
-                TextEntity(
-                    key = keyAllocator.next(),
-                    name = "Panel Layout",
-                    objectId = "astrion_layout",
-                    initialState = config.layoutJson,
-                    onText = { json -> panelConfigStore.applyLayoutJson(json) }
-                )
-            )
+            // 布局不再走 text 实体（HA 对 text 值限 255 字符），改由模板
+            // sensor `sensor.astrion_layout` 的 `layout` 属性传输（见
+            // TRANSPORT_LAYOUT_ID / blueprints/template/astrion_panel_layout.yaml）。
+            // IR codebook 仍为单 text 实体（JSON 较短）。
             add(
                 TextEntity(
                     key = keyAllocator.next(),
@@ -808,8 +801,8 @@ class DeviceBuilder @Inject constructor(
         /** Default wake word sensitivity, equal to the stock 0.97 cutoff. */
         const val DEFAULT_WAKE_WORD_SENSITIVITY = 0.03f
 
-        /** Fixed HA entity whose state carries layouts of any length. */
-        const val TRANSPORT_SENSOR_ID = "sensor.astrion_layout"
+        /** Fixed HA sensor attribute carrying layouts of any length. */
+        const val TRANSPORT_LAYOUT_ID = "sensor.astrion_layout.layout"
     }
 }
 

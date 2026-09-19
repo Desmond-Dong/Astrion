@@ -26,7 +26,7 @@ private const val SETTINGS_FILE_NAME = "panel_config.json"
  */
 @Serializable
 data class PanelConfig(
-    /** Raw JSON of [PanelLayout] received through the `astrion_layout` text entity. */
+    /** Raw JSON of [PanelLayout] received through the `sensor.astrion_layout.layout` attribute. */
     val layoutJson: String = "",
     /** Raw JSON of [IrCodebook] received through the `astrion_ir_codes` text entity. */
     val irCodesJson: String = "",

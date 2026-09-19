@@ -1,11 +1,17 @@
 blueprint:
-  name: Astrion 面板自动布局
+  name: Astrion 面板自动布局（sensor attribute）
   description: >-
     和原版卡片设置一样：按类别勾选想出现在面板上的设备（每类可多选），
     面板自动按家里的房间（区域）分组显示，设备名沿用 HA 里的名称。
-    HA 重启后 / 每天凌晨 4 点 / 家里设备变动时，布局自动刷新。
-    物理按键绑定在遥控器上直接设置（下拉面板 → 快捷键绑定）。
-  domain: automation
+
+    原理：生成一个模板 sensor（sensor.astrion_layout），完整布局放在它的
+    `layout` 属性里。HA 对实体状态限 255 字符、但属性不受限，所以布局
+    不经过任何 text 实体、也不需要分块；勾选设备后 sensor 自动重算，
+    面板订阅该属性实时刷新（无需自动化触发器、无需重启）。
+
+    注意：HA 同一 unique_id 只能存在一个——用之前先停用/删除旧版蓝图的
+    旧 text 实体，避免两个"布局实体"打架。
+  domain: template
   author: Astrion
   input:
     light_entities:
@@ -120,52 +126,40 @@ blueprint:
           filter:
             - domain: vacuum
           multiple: true
-    layout_entity:
-      name: 面板布局实体
-      description: 面板设备上的 Panel Layout（text.astrion_layout）
-      selector:
-        entity:
-          filter:
-            - domain: text
-
-triggers:
-  - trigger: homeassistant
-    event: start
-  - trigger: time
-    at: "04:00:00"
-  - trigger: event
-    event_type: entity_registry_updated
-
-variables:
-  layout_entity: !input layout_entity
-
-actions:
-  # 勾选的设备清单与布局 JSON 必须在动作序列里逐步求值：
-  # 自动化顶层 variables 是整体渲染，同层变量互相不可见。
-  - variables:
-      light_entities: !input light_entities
-      switch_entities: !input switch_entities
-      climate_entities: !input climate_entities
-      cover_entities: !input cover_entities
-      fan_entities: !input fan_entities
-      media_entities: !input media_entities
-      remote_entities: !input remote_entities
-      scene_entities: !input scene_entities
-      script_entities: !input script_entities
-      weather_entities: !input weather_entities
-      humidifier_entities: !input humidifier_entities
-      water_heater_entities: !input water_heater_entities
-      valve_entities: !input valve_entities
-      vacuum_entities: !input vacuum_entities
-      all_entities: >-
-        {{ (light_entities or []) + (switch_entities or []) + (climate_entities or [])
+  variables:
+    light_entities: !input light_entities
+    switch_entities: !input switch_entities
+    climate_entities: !input climate_entities
+    cover_entities: !input cover_entities
+    fan_entities: !input fan_entities
+    media_entities: !input media_entities
+    remote_entities: !input remote_entities
+    scene_entities: !input scene_entities
+    script_entities: !input script_entities
+    weather_entities: !input weather_entities
+    humidifier_entities: !input humidifier_entities
+    water_heater_entities: !input water_heater_entities
+    valve_entities: !input valve_entities
+    vacuum_entities: !input vacuum_entities
+sensor:
+  - name: Astrion Layout
+    unique_id: astrion_layout
+    icon: mdi:format-list-bulleted
+    unit_of_measurement: " 台"
+    state: >-
+      {{ ((light_entities or []) + (switch_entities or []) + (climate_entities or [])
+          + (cover_entities or []) + (fan_entities or []) + (media_entities or [])
+          + (remote_entities or []) + (scene_entities or []) + (script_entities or [])
+          + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
+          + (valve_entities or []) + (vacuum_entities or [])) | length }}
+    attributes:
+      layout: >-
+        {% set ns = namespace(by_area={}) %}
+        {% for e in (light_entities or []) + (switch_entities or []) + (climate_entities or [])
            + (cover_entities or []) + (fan_entities or []) + (media_entities or [])
            + (remote_entities or []) + (scene_entities or []) + (script_entities or [])
            + (weather_entities or []) + (humidifier_entities or []) + (water_heater_entities or [])
-           + (valve_entities or []) + (vacuum_entities or []) }}
-      layout_text: >-
-        {% set ns = namespace(by_area={}) %}
-        {% for e in all_entities %}
+           + (valve_entities or []) + (vacuum_entities or []) %}
           {% if state_attr(e, 'entity_category') not in ['config', 'diagnostic'] %}
             {% set a = (area_name(area_id(e)) if area_id(e) else none) or '其他' %}
             {% set nm = (states[e].name if e in states else e)
@@ -179,14 +173,3 @@ actions:
           {% set ns.rows = ns.rows + [a ~ '=' ~ (ns.by_area[a] | join(', '))] %}
         {% endfor %}
         {{ ns.rows | join('; ') }}
-  - if: "{{ all_entities | count > 0 }}"
-    then:
-      # 面板的 text.astrion_layout 向 HA 声明 max_length=32768（协议本身无
-      # 255 限制，HA 按声明值校验），整条布局一次写入即可，不存在截断。
-      - action: text.set_value
-        target:
-          entity_id: "{{ layout_entity }}"
-        data:
-          value: "{{ layout_text }}"
-
-mode: single

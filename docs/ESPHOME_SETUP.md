@@ -26,26 +26,25 @@
 
 ---
 
-## 3. 房间与设备：`astrion_layout`（推荐用蓝图，不用手写）
+## 3. 房间与设备：`astrion_layout`（模板蓝图，零手写）
 
-**自动布局（推荐）**：在 HA 里导入本仓库的蓝图
-`blueprints/automation/astrion_panel_layout.yaml`（设置 → 自动化与场景 → 蓝图 →
-右上角"导入蓝图"，粘贴该文件的 GitHub 链接）。创建自动化时：
+**自动布局（推荐）**：在 HA 里导入本仓库的模板蓝图
+`blueprints/template/astrion_panel_layout.yaml`（设置 → 设备与服务 → 模板 →
+右下角"下载蓝图"粘贴该文件的 GitHub 链接）。填入设备时：
 
 1. **像原版卡片设置一样按类别勾选设备**——灯、开关、空调、窗帘、风扇、媒体
    播放器、电视遥控、场景…每类可多选，不勾的类别不上屏；
-2. 选面板设备上的 **Panel Layout** 实体，保存即可。
+2. 创建出一个模板 sensor `sensor.astrion_layout`，在 ESPHome 面板设备的
+   **Home Assistant 状态订阅**里把它勾上（选 `sensor.astrion_layout.layout`
+   属性）；保存即可。
 
-生成的布局是紧凑的 `房间=实体, 实体; …` 格式，整条一次写入 Panel Layout
-实体。该实体向 HA 声明的容量是 32768 字符（协议本身没有 255 限制，HA
-按声明值校验），几十台设备的大户型也装得下，**无需任何分块或模板传感器**。
-手动微调名字可在实体后加 `|别名`。
+生成的布局是紧凑的 `房间=实体|别名, 实体|别名; …` 格式，存放在
+`sensor.astrion_layout` 的 **`layout` 属性**里。HA 实体状态限 255 字符、
+但属性不受长度限制，所以几十台设备的大布局**整条进属性**，不需要任何
+text 实体中转、也不需要分块。模板 sensor 在勾选变更时自动重算，面板
+订阅该属性实时刷新。
 
-保存后面板自动按家里的房间分组显示，设备沿用 HA 名称；HA 重启、每天凌晨
-4 点、设备变动时自动刷新。
-
-
-**手动写法**：往 `text.astrion_layout` 填一行：
+**手动写法**（不建模板 sensor 时）：往 `text.astrion_layout` 填一行：
 
 ```
 客厅=remote.tv, media_player.tv | 电视; 卧室=light.bed, fan.bed
@@ -135,7 +134,7 @@
 
 | 实体 | 用途 |
 |---|---|
-| `astrion_layout` | 房间/设备布局（§3） |
+| `sensor.astrion_layout` | 房间/设备布局（§3，`layout` 属性） |
 | `astrion_ir_codes` | 面板本地红外码库（§4） |
 | `navigate` | 选一个房间名 → 面板跳过去（选完自动弹回） |
 | `current_activity` | 显示面板当前页面，供自动化读取 |
@@ -179,10 +178,12 @@
 
 ---
 
-## 10. 进阶：长配置的自动化下发
+## 10. 进阶：长配置的下发
 
-`text.astrion_layout` / `text.astrion_ir_codes` 本身可容纳 32768 字符，
-长布局、长码库**直接写入即可**，不需要 input_text 中转。自动化示例：
+布局走模板 sensor `sensor.astrion_layout` 的 `layout` 属性（§3），属性不受
+255 字符状态限制，长布局整条放进属性即可；`text.astrion_ir_codes` 是 IR
+码库（JSON 较短）。凡是不需要面板实时刷新、只想推一次的自定义配置，仍可
+写进 `text.astrion_layout`（声明容量 32768）：
 
 ```yaml
 automation:

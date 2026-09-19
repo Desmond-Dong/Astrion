@@ -32,9 +32,10 @@ object PanelCardTypes {
 
 /**
  * The full panel configuration pushed from Home Assistant through the
- * `astrion_layout` text entity. It replaces the original `astrion/devices`
- * WebSocket device tree (§2.8): rooms with cards, extra navigation pages and
- * the list of Home Assistant entities whose states the panel imports.
+ * `sensor.astrion_layout` `layout` attribute (template blueprint). It replaces
+ * the original `astrion/devices` WebSocket device tree (§2.8): rooms with cards,
+ * extra navigation pages and the list of Home Assistant entities whose states
+ * the panel imports.
  */
 @Serializable
 data class PanelLayout(
