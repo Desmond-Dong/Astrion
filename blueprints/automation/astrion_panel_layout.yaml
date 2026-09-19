@@ -126,26 +126,26 @@ blueprint:
           filter:
             - domain: vacuum
           multiple: true
-  variables:
-    light_entities: !input light_entities
-    switch_entities: !input switch_entities
-    climate_entities: !input climate_entities
-    cover_entities: !input cover_entities
-    fan_entities: !input fan_entities
-    media_entities: !input media_entities
-    remote_entities: !input remote_entities
-    scene_entities: !input scene_entities
-    script_entities: !input script_entities
-    weather_entities: !input weather_entities
-    humidifier_entities: !input humidifier_entities
-    water_heater_entities: !input water_heater_entities
-    valve_entities: !input valve_entities
-    vacuum_entities: !input vacuum_entities
 sensor:
   - name: Astrion Layout
     unique_id: astrion_layout
     icon: mdi:format-list-bulleted
     unit_of_measurement: " 台"
+    variables:
+      light_entities: !input light_entities
+      switch_entities: !input switch_entities
+      climate_entities: !input climate_entities
+      cover_entities: !input cover_entities
+      fan_entities: !input fan_entities
+      media_entities: !input media_entities
+      remote_entities: !input remote_entities
+      scene_entities: !input scene_entities
+      script_entities: !input script_entities
+      weather_entities: !input weather_entities
+      humidifier_entities: !input humidifier_entities
+      water_heater_entities: !input water_heater_entities
+      valve_entities: !input valve_entities
+      vacuum_entities: !input vacuum_entities
     state: >-
       {{ ((light_entities or []) + (switch_entities or []) + (climate_entities or [])
           + (cover_entities or []) + (fan_entities or []) + (media_entities or [])
