@@ -47,7 +47,7 @@ import javax.inject.Singleton
  *   by [HaCardsAdapter]) and the IR codebook via `astrion/get_device_codes`,
  * - imports entity states from `get_states` + `state_changed` events,
  * - forwards card actions ([HaActionBus]) as WebSocket `call_service` commands,
- * - reports page visits / key presses by firing `astrion/*` events,
+ * - reports page visits / key presses by firing astrion bus events,
  * - reacts to `astrion/navigate_to`, `astrion/cards_updated`,
  *   `astrion/refresh_request` and `astrion/ota_manifest`.
  */

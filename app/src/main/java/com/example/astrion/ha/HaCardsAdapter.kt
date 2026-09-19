@@ -8,6 +8,7 @@ import com.example.astrion.panel.PanelRoom
 import com.example.astrion.services.HaEntityState
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**

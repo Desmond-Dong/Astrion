@@ -5,6 +5,7 @@ import androidx.datastore.dataStoreFile
 import com.example.astrion.settings.SettingsStore
 import com.example.astrion.settings.SettingState
 import com.example.astrion.settings.SettingsStoreImpl
+import com.example.astrion.settings.setting
 import com.example.astrion.utils.getRandomMacAddressString
 import dagger.Module
 import dagger.Provides

@@ -13,7 +13,7 @@ import javax.inject.Singleton
 /**
  * Panel → Home Assistant event uplink (§5.2): page visits / button and key
  * presses are announced here and forwarded by the WebSocket bridge as
- * `astrion/*` bus events, so HA automations can bind any panel action.
+ * astrion bus events, so HA automations can bind any panel action.
  *
  * Events carry no payload beyond the serial; automations that need details
  * read the astrion integration's select entities alongside.
