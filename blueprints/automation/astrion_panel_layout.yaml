@@ -181,30 +181,12 @@ actions:
         {{ ns.rows | join('; ') }}
   - if: "{{ all_entities | count > 0 }}"
     then:
-      # 单条即可容纳（约 8-10 台设备）；超出部分自动写入 3 个隐藏溢出分片
-      # （默认停用，需要时在设备页启用它们即可，写入失败不会中断）
+      # 面板的 text.astrion_layout 向 HA 声明 max_length=32768（协议本身无
+      # 255 限制，HA 按声明值校验），整条布局一次写入即可，不存在截断。
       - action: text.set_value
         target:
           entity_id: "{{ layout_entity }}"
         data:
-          value: "{{ layout_text[:250] }}"
-      - action: text.set_value
-        continue_on_error: true
-        target:
-          entity_id: text.astrion_layout_part_00
-        data:
-          value: "{{ layout_text[250:500] }}"
-      - action: text.set_value
-        continue_on_error: true
-        target:
-          entity_id: text.astrion_layout_part_01
-        data:
-          value: "{{ layout_text[500:750] }}"
-      - action: text.set_value
-        continue_on_error: true
-        target:
-          entity_id: text.astrion_layout_part_02
-        data:
-          value: "{{ layout_text[750:1000] }}"
+          value: "{{ layout_text }}"
 
 mode: single

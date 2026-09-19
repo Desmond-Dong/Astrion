@@ -36,29 +36,10 @@
    播放器、电视遥控、场景…每类可多选，不勾的类别不上屏；
 2. 选面板设备上的 **Panel Layout** 实体，保存即可。
 
-#### 大户型/超长布局：sensor 通道（无长度限制）
-
-HA 的 text 实体单条硬限 255 字符；**sensor 状态没有这个限制**。在
-configuration.yaml 里加一个模板传感器，把布局（无论多长）算进它的状态：
-
-```yaml
-template:
-  - sensor:
-      - name: astrion_layout
-        state: >
-          {{ 你的布局字符串/多段拼接 }}
-```
-
-面板**自动订阅** `sensor.astrion_layout`，状态一变立即应用——HA 里只有
-这一个实体，无需任何分块实体。text 实体（短布局手输）和 sensor 通道
-（长布局）二选一即可，后写入者生效。
-
-生成的布局是紧凑的 `房间=实体, 实体; …` 格式，写入 Panel Layout 实体
-（单条上限 255 字符，约装 8-10 台设备；手动微调名字可在实体后加 `|别名`）。
-
-设备更多时改用 **sensor 通道（无长度限制）**：面板固定订阅
-`sensor.astrion_layout`，在 configuration.yaml 里加一个模板传感器把长布局
-算进它的状态即可，面板自动应用（见上一节）。
+生成的布局是紧凑的 `房间=实体, 实体; …` 格式，整条一次写入 Panel Layout
+实体。该实体向 HA 声明的容量是 32768 字符（协议本身没有 255 限制，HA
+按声明值校验），几十台设备的大户型也装得下，**无需任何分块或模板传感器**。
+手动微调名字可在实体后加 `|别名`。
 
 保存后面板自动按家里的房间分组显示，设备沿用 HA 名称；HA 重启、每天凌晨
 4 点、设备变动时自动刷新。
@@ -200,23 +181,21 @@ template:
 
 ## 10. 进阶：长配置的自动化下发
 
-文本实体输入框短且单行。需要很长的布局/码库时，把内容放在 HA 的 `input_text`（长度可到 10000）里，再用一个自动化同步：
+`text.astrion_layout` / `text.astrion_ir_codes` 本身可容纳 32768 字符，
+长布局、长码库**直接写入即可**，不需要 input_text 中转。自动化示例：
 
 ```yaml
 automation:
-  - alias: 同步面板布局
-    triggers:
-      - trigger: state
-        entity_id: input_text.astrion_layout
+  - alias: 下发面板布局
     actions:
       - action: text.set_value
         target:
           entity_id: text.astrion_layout
         data:
-          value: "{{ states('input_text.astrion_layout') }}"
+          value: "客厅=light.a, media_player.tv; 卧室=light.b"
 ```
 
-（旧版 HA 用 `service:` 写法，含义相同。）布局和码库建议各放一个 `input_text` 分别同步；按键绑定不需要 HA 参与。
+（旧版 HA 用 `service:` 写法，含义相同。）按键绑定不需要 HA 参与。
 
 ---
 
