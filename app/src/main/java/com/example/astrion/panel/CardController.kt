@@ -24,7 +24,7 @@ class CardController @Inject constructor(
     /**
      * Presses a named key (POWER, UP, VOLUME_UP, NUM_5, ...) on a tv card.
      * Local codebook first, then the HA service matching the entity domain
-     * (§4.1 服务分派, ESPHome 化: astrion.send_command → remote.send_command).
+     * (§4.1 服务分派; astrion 化: astrion/control_command → remote.send_command).
      */
     suspend fun pressTvKey(card: PanelCard, key: String) {
         // Panel-initiated key presses are announced to Home Assistant

@@ -11,12 +11,12 @@ import androidx.core.app.NotificationCompat
 import com.example.astrion.MainActivity
 import com.example.astrion.R
 
-private const val VOICE_SATELLITE_SERVICE_CHANNEL_ID = "VoiceSatelliteService"
+private const val PANEL_SERVICE_CHANNEL_ID = "PanelService"
 
-fun createVoiceSatelliteServiceNotificationChannel(context: Context) {
-    val channelName = "Voice Satellite Background Service"
+fun createPanelServiceNotificationChannel(context: Context) {
+    val channelName = "Astrion Panel Background Service"
     val chan = NotificationChannel(
-        VOICE_SATELLITE_SERVICE_CHANNEL_ID,
+        PANEL_SERVICE_CHANNEL_ID,
         channelName,
         NotificationManager.IMPORTANCE_NONE
     )
@@ -26,9 +26,9 @@ fun createVoiceSatelliteServiceNotificationChannel(context: Context) {
     manager.createNotificationChannel(chan)
 }
 
-fun createVoiceSatelliteServiceNotification(context: Context, content: String): Notification {
+fun createPanelServiceNotification(context: Context, content: String): Notification {
     val notificationBuilder =
-        NotificationCompat.Builder(context, VOICE_SATELLITE_SERVICE_CHANNEL_ID)
+        NotificationCompat.Builder(context, PANEL_SERVICE_CHANNEL_ID)
 
     // Open the app when the notification is clicked
     val pendingIntent = PendingIntent.getActivity(

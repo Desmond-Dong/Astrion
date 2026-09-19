@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.astrion.ui.screens.panel.DeviceDetailScreen
+import com.example.astrion.ui.screens.panel.HaSettingsScreen
 import com.example.astrion.ui.screens.panel.PanelHomeScreen
 import com.example.astrion.ui.screens.panel.ShortcutBindScreen
 import com.example.astrion.ui.screens.panel.ShortcutKeysScreen
@@ -31,6 +32,10 @@ object ShortcutKeysRoute
 /** 指定按键的绑定页（原版 ShortCutKeyBindActivity）。 */
 @Serializable
 data class ShortcutBindRoute(val keyCode: Int)
+
+/** Home Assistant 连接设置（地址 / 端口 / 访问令牌）。 */
+@Serializable
+object HaSettingsRoute
 
 @Composable
 fun PanelNavHost(
@@ -89,6 +94,9 @@ fun PanelNavHost(
                 navController = navController,
                 keyCode = route.keyCode
             )
+        }
+        composable<HaSettingsRoute> {
+            HaSettingsScreen(navController)
         }
     }
 }

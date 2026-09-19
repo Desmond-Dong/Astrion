@@ -26,18 +26,18 @@ private const val SETTINGS_FILE_NAME = "panel_config.json"
  */
 @Serializable
 data class PanelConfig(
-    /** Raw JSON of [PanelLayout] received through the `sensor.astrion_layout.layout` attribute. */
+    /** Raw JSON of [PanelLayout] pulled via `astrion/get_cards`. */
     val layoutJson: String = "",
-    /** Raw JSON of [IrCodebook] received through the `astrion_ir_codes` text entity. */
+    /** Raw JSON of [IrCodebook] pulled via `astrion/get_device_codes`. */
     val irCodesJson: String = "",
 )
 
 private val DEFAULT = PanelConfig()
 
 /**
- * Store of the HA-driven panel configuration. Home Assistant writes config
- * JSON into the panel's text entities; this store parses, persists and
- * re-exposes it as typed flows for the UI and the ESPHome entity builders.
+ * Store of the HA-driven panel configuration. The WebSocket bridge writes
+ * config JSON pulled from the astrion integration; this store parses,
+ * persists and re-exposes it as typed flows for the UI.
  */
 class PanelConfigStore @Inject constructor(
     @ApplicationContext context: Context
@@ -51,9 +51,7 @@ class PanelConfigStore @Inject constructor(
     private val _version = MutableStateFlow(0)
 
     /**
-     * Bumped every time the configuration content actually changes. The
-     * satellite service observes this to rebuild the ESPHome entity list
-     * (IR codebook changes add/remove button entities).
+     * Bumped every time the configuration content actually changes.
      */
     val version: StateFlow<Int> = _version.asStateFlow()
 

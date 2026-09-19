@@ -61,14 +61,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import com.example.astrion.R
-import com.example.astrion.esphome.Connected
+import com.example.astrion.ha.HaConnectionState
+import com.example.astrion.ha.HaPanelBridge
 import com.example.astrion.panel.PanelCard
 import com.example.astrion.panel.PanelCardTypes
 import com.example.astrion.panel.PanelLayout
 import com.example.astrion.services.ActivityNavigator
 import com.example.astrion.services.HomeAssistantStatesStore
-import com.example.astrion.services.SatelliteStateHolder
 import com.example.astrion.ui.DeviceDetail
+import com.example.astrion.ui.HaSettingsRoute
 import com.example.astrion.ui.ShortcutKeysRoute
 import com.example.astrion.ui.theme.RemoteBackground
 import com.example.astrion.ui.theme.RemoteColors
@@ -89,8 +90,7 @@ class PanelViewModel @Inject constructor(
     panelConfigStore: com.example.astrion.panel.PanelConfigStore,
     haStatesStore: HomeAssistantStatesStore,
     private val activityNavigator: ActivityNavigator,
-    private val satelliteStateHolder: SatelliteStateHolder,
-    private val microphoneSettingsStore: com.example.astrion.settings.MicrophoneSettingsStore,
+    private val panelBridge: HaPanelBridge,
     private val displaySettingsStore: com.example.astrion.settings.DisplaySettingsStore,
     private val screenOffController: com.example.astrion.services.ScreenOffController,
 ) : ViewModel() {
@@ -98,8 +98,7 @@ class PanelViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PanelLayout())
     val haStates = haStatesStore.states
     val currentPage = activityNavigator.currentPage
-    val deviceState = satelliteStateHolder.deviceState
-    val micMuted = microphoneSettingsStore.muted
+    val connectionState = panelBridge.state
     val raiseToWake = displaySettingsStore.raiseToWakeThreshold
         .map { it > 0f }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -120,13 +119,9 @@ class PanelViewModel @Inject constructor(
         }
     }
 
-    fun refreshDevices() = satelliteStateHolder.reconnect()
+    fun refreshDevices() = panelBridge.reconnect()
 
     fun screenOff() = screenOffController.turnScreenOffNow()
-
-    fun setMicMuted(muted: Boolean) {
-        viewModelScope.launch { micMuted.set(muted) }
-    }
 }
 
 /** Per-type accent pair for the icon gradient (reserved for editor previews). */
@@ -223,8 +218,7 @@ fun PanelHomeScreen(
     val layout by viewModel.layout.collectAsStateWithLifecycle()
     val haStates by viewModel.haStates.collectAsStateWithLifecycle()
     val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
-    val deviceState by viewModel.deviceState.collectAsStateWithLifecycle()
-    val micMuted by viewModel.micMuted.collectAsStateWithLifecycle(initialValue = false)
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val raiseToWake by viewModel.raiseToWake.collectAsStateWithLifecycle()
     val screenSaverTimeout by viewModel.screenSaverTimeout.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -244,7 +238,7 @@ fun PanelHomeScreen(
         }
     }
 
-    val connected = deviceState == Connected
+    val connected = connectionState == HaConnectionState.Connected
     var quickSettingsOpen by remember { mutableStateOf(false) }
 
     Box(
@@ -292,8 +286,6 @@ fun PanelHomeScreen(
         if (quickSettingsOpen) {
             QuickSettingsPanel(
                 connected = connected,
-                micMuted = micMuted,
-                onMicMutedChanged = { viewModel.setMicMuted(it) },
                 raiseToWake = raiseToWake,
                 onRaiseToWakeChanged = { viewModel.setRaiseToWake(it) },
                 screenSaverTimeout = screenSaverTimeout,
@@ -301,6 +293,7 @@ fun PanelHomeScreen(
                 onRefreshDevices = { viewModel.refreshDevices() },
                 onScreenOff = { viewModel.screenOff() },
                 onOpenShortcutKeys = { navController.navigate(ShortcutKeysRoute) },
+                onOpenConnectionSettings = { navController.navigate(HaSettingsRoute) },
                 onOpenSettings = {
                     context.startActivity(
                         android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
@@ -650,7 +643,6 @@ private fun PageDotsIndicator(
  *  150×50 刷新钮(18sp 白字) + 底部金色扫码提示。 */
 @Composable
 private fun EmptyLayoutHint(onRefresh: () -> Unit) {
-    val panelIp = remember { getLocalIpAddress().orEmpty() }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -668,11 +660,10 @@ private fun EmptyLayoutHint(onRefresh: () -> Unit) {
         Text(text = "暂无设备", color = Color.White, fontSize = 22.sp)
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "① 让面板和手机/电脑连同一个路由器\n" +
-                "② 打开 Home Assistant → 设置 → 设备与服务 → ESPHome\n" +
-                "③ 点本面板旁边的\"采纳\"即可（列表里没有就选\"其他\"，填下面的地址）\n" +
-                if (panelIp.isBlank()) "本面板地址：见 下拉面板 → 网络"
-                else "本面板地址：$panelIp  端口 6053",
+            text = "① 让面板和 Home Assistant 连同一个路由器\n" +
+                "② 下拉打开 快捷设置 → 连接设置，填 HA 地址和长寿命访问令牌\n" +
+                "③ 面板自动配对后，在 HA「设置 → 设备与服务 → Astrion Remote」" +
+                "的子条目里配置分类卡片",
             textAlign = TextAlign.Center,
             color = Color.White,
             fontSize = 18.sp,

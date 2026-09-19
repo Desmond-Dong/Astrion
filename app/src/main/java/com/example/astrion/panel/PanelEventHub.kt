@@ -11,13 +11,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Panel → Home Assistant event uplink (§5.2): the original astrion
- * integration's bus events (`astrion/page_visited`, `astrion/control_command`)
- * survive here as payload-less announcements that the ESPHome event entities
- * (`panel_page_visited` / `panel_button_pressed`) forward to Home Assistant.
+ * Panel → Home Assistant event uplink (§5.2): page visits / button and key
+ * presses are announced here and forwarded by the WebSocket bridge as
+ * `astrion/*` bus events, so HA automations can bind any panel action.
  *
- * ESPHome events carry no payload, so automations that need details read the
- * `current_activity` select or the `panel_pages` text sensor alongside.
+ * Events carry no payload beyond the serial; automations that need details
+ * read the astrion integration's select entities alongside.
  */
 @Singleton
 class PanelEventHub @Inject constructor() {

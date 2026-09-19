@@ -4,7 +4,6 @@ import android.content.Context
 import android.media.AudioManager
 import com.example.astrion.services.ActivityNavigator
 import com.example.astrion.services.HaActionBus
-import com.example.astrion.services.SatelliteStateHolder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -47,10 +46,9 @@ class PhysicalKeyBus @Inject constructor() {
 }
 
 /**
- * Routes physical key presses: the mic key starts a hands-free Assist
- * conversation first (§3.10.1 语音键), then the topmost screen handler (device
- * pages reuse keys as remote commands, §3.10.4 物理键语义), then the
- * HA-configured bindings ([KeyBindingExecutor], §3.10.5 快捷键).
+ * Routes physical key presses: the topmost screen handler (device pages reuse
+ * keys as remote commands, §3.10.4 物理键语义), then the HA-configured
+ * bindings ([KeyBindingExecutor], §3.10.5 快捷键).
  */
 @Singleton
 class KeyRouter @Inject constructor(
@@ -126,7 +124,6 @@ class KeyBindingExecutor @Inject constructor(
     private val activityNavigator: ActivityNavigator,
     private val haActionBus: HaActionBus,
     private val panelUiEvents: PanelUiEvents,
-    private val satelliteStateHolder: SatelliteStateHolder,
     private val haStatesStore: com.example.astrion.services.HomeAssistantStatesStore,
     private val shortcutBindingStore: ShortcutBindingStore,
 ) {
@@ -165,7 +162,6 @@ class KeyBindingExecutor @Inject constructor(
                 activityNavigator.setPage(firstRoom)
             }
 
-            KeyBindingActions.VOICE -> satelliteStateHolder.voiceAssistant?.wakeAssistant()
             KeyBindingActions.CARD -> panelUiEvents.tryOpenCard(binding.target)
 
             else -> {
@@ -272,7 +268,6 @@ class KeyBindingExecutor @Inject constructor(
             137 to PanelCardTypes.CLIMATE
         )
         val result = mutableListOf(
-            KeyBinding(133, false, KeyBindingActions.VOICE),
             KeyBinding(132, false, KeyBindingActions.HOME)
         )
         defaults.forEach { (keycode, type) ->

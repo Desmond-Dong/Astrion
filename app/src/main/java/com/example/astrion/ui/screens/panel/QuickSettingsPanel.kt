@@ -34,9 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.astrion.services.SatelliteStateHolder
 import com.example.astrion.utils.getLocalIpAddress
-import com.example.astrion.esphome.Connected
 import com.example.astrion.ui.theme.RemoteColors
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -49,14 +47,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 /**
  * The quick settings panel (原版 DropDownView): swipe down from the top edge
  * to reveal it. Keeps the original semantics — WiFi/HA status, screen
- * brightness, media volume — without duplicating things Home Assistant
- * already configures.
+ * brightness, media volume — plus the panel's own connection settings.
  */
 @Composable
 fun QuickSettingsPanel(
     connected: Boolean,
-    micMuted: Boolean,
-    onMicMutedChanged: (Boolean) -> Unit,
     onScreenOff: () -> Unit,
     raiseToWake: Boolean,
     onRaiseToWakeChanged: (Boolean) -> Unit,
@@ -64,6 +59,7 @@ fun QuickSettingsPanel(
     onScreenSaverTimeoutChanged: (Int) -> Unit,
     onRefreshDevices: () -> Unit,
     onOpenShortcutKeys: () -> Unit,
+    onOpenConnectionSettings: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -247,18 +243,24 @@ fun QuickSettingsPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable(onClick = onOpenConnectionSettings)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("连接设置", color = RemoteColors.onSurface, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                Text("HA 地址 · 令牌", color = RemoteColors.accent, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(6.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
                     .clickable(onClick = onOpenSettings)
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("系统设置", color = RemoteColors.onSurface, fontSize = 14.sp)
-            }
-            Spacer(Modifier.height(8.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("麦克风静音", color = RemoteColors.onSurface, fontSize = 14.sp)
-                Spacer(Modifier.weight(1f))
-                Switch(checked = micMuted, onCheckedChange = onMicMutedChanged)
             }
         }
     }

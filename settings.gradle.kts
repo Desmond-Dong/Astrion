@@ -21,5 +21,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "Astrion"
 include(":app")
-include(":esphomeproto")
-include(":microfeatures")

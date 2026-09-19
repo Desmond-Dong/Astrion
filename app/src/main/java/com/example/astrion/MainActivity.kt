@@ -17,14 +17,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.example.astrion.esphome.Connected
+import com.example.astrion.ha.HaConnectionState
+import com.example.astrion.ha.HaPanelBridge
 import com.example.astrion.ota.OtaUpdateManager
 import com.example.astrion.panel.KeyPress
 import com.example.astrion.panel.KeyRouter
 import com.example.astrion.panel.PanelUiEvents
 import com.example.astrion.panel.ScreensaverController
-import com.example.astrion.services.SatelliteStateHolder
-import com.example.astrion.services.VoiceSatelliteService
+import com.example.astrion.services.PanelService
 import com.example.astrion.ui.PanelNavHost
 import com.example.astrion.ui.screens.panel.OtaUpdateBanner
 import com.example.astrion.ui.screens.panel.ScreensaverHost
@@ -34,9 +34,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * The appliance main screen: launches the satellite service (always) and
- * shows the remote UI. There are no in-app settings — everything is
- * configured from Home Assistant through the ESPHome integration.
+ * The appliance main screen: launches the panel service (always) and shows
+ * the remote UI. Connection settings live in 快速设置 → 连接设置.
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -51,7 +50,7 @@ class MainActivity : ComponentActivity() {
     lateinit var screensaverController: ScreensaverController
 
     @Inject
-    lateinit var satelliteStateHolder: SatelliteStateHolder
+    lateinit var panelBridge: HaPanelBridge
 
     @Inject
     lateinit var otaUpdateManager: OtaUpdateManager
@@ -77,10 +76,10 @@ class MainActivity : ComponentActivity() {
                     goHome = panelUiEvents.goHome,
                     openShortcutBind = panelUiEvents.openShortcutBind
                 )
-                val deviceState by satelliteStateHolder.deviceState.collectAsState()
+                val deviceState by panelBridge.state.collectAsState()
                 ScreensaverHost(
                     controller = screensaverController,
-                    haConnected = deviceState == Connected
+                    haConnected = deviceState == HaConnectionState.Connected
                 )
                 // OTA update prompt (§3.9/§8.6), above everything else.
                 OtaUpdateBanner(manager = otaUpdateManager)
@@ -105,14 +104,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requiredPermissions(): Array<String> = buildList {
-        add(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS)
         }
     }.toTypedArray()
 
     private fun startSatelliteService() {
-        val intent = Intent(this, VoiceSatelliteService::class.java)
+        val intent = Intent(this, PanelService::class.java)
         ContextCompat.startForegroundService(this, intent)
     }
 

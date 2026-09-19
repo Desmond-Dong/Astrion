@@ -9,7 +9,7 @@ import kotlinx.serialization.json.jsonObject
 /**
  * Card types, matching the original `aiks-*` RosCard family (§4) rendered
  * natively by the panel (§5.2: layout rendered by the App, entities owned by
- * the ESPHome device in Home Assistant).
+ * the astrion integration in Home Assistant).
  */
 object PanelCardTypes {
     const val TV = "tv"
@@ -31,11 +31,10 @@ object PanelCardTypes {
 }
 
 /**
- * The full panel configuration pushed from Home Assistant through the
- * `sensor.astrion_layout` `layout` attribute (template blueprint). It replaces
- * the original `astrion/devices` WebSocket device tree (§2.8): rooms with cards,
- * extra navigation pages and the list of Home Assistant entities whose states
- * the panel imports.
+ * The full panel configuration pulled from the astrion integration's
+ * `astrion/get_cards` WebSocket command ([com.example.astrion.ha.HaCardsAdapter]
+ * converts it to this format): rooms with cards, extra navigation pages and
+ * the list of Home Assistant entities whose states the panel imports.
  */
 @Serializable
 data class PanelLayout(
@@ -230,10 +229,7 @@ object KeyBindingActions {
     /** Jump back to the first room (panel home). */
     const val HOME = "home"
 
-    /** Start a hands-free Assist conversation (same as the mic key). */
-    const val VOICE = "voice"
-
-    val all = setOf(ROOM, CARD, SERVICE, HOME, VOICE)
+    val all = setOf(ROOM, CARD, SERVICE, HOME)
 }
 
 @Serializable
@@ -252,10 +248,10 @@ data class KeyBinding(
 )
 
 /**
- * IR codebook pushed from Home Assistant through the `astrion_ir_codes` text
- * entity: `{"<device>": {"<button>": "<code>"}}`. Codes are raw strings in any
- * of the three supported formats (comma timings, Broadlink base64, AES base64)
- * decoded by [com.example.astrion.esphome.infrared.IrCodec].
+ * IR codebook pulled from Home Assistant via the `astrion/get_device_codes`
+ * WebSocket command: `{"<device>": {"<button>": "<code>"}}`. Codes are raw
+ * strings in any of the three supported formats (comma timings, Broadlink
+ * base64, AES base64) decoded by [com.example.astrion.panel.infrared.IrCodec].
  */
 @Serializable
 data class IrCodebook(

@@ -68,7 +68,6 @@ android {
 
 dependencies {
 
-    implementation(project(":esphomeproto"))
     implementation(project(":microfeatures"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -80,13 +79,9 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.litert)
-    implementation(libs.protobuf.kotlin)
+    implementation(libs.okhttp)
     implementation(libs.androidx.datastore)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.media3.common.ktx)
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.material3)
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.lifecycle.viewmodel)

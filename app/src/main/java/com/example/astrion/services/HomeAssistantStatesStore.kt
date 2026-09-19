@@ -19,10 +19,11 @@ data class HaEntityState(
 )
 
 /**
- * Collects Home Assistant entity states pushed to the panel through the
- * ESPHome homeassistant API (`HomeAssistantStateResponse`). The panel renders
- * these as the on-device "device tree", matching the original HaRemote/Astrion
- * behaviour where rooms/pages and their device states come from Home Assistant.
+ * Collects Home Assistant entity states pulled over the WebSocket API
+ * (`get_states` + `state_changed` events, written by
+ * [com.example.astrion.ha.HaPanelBridge]). The panel renders these as the
+ * on-device "device tree", matching the original HaRemote/Astrion behaviour
+ * where rooms/pages and their device states come from Home Assistant.
  */
 @Singleton
 class HomeAssistantStatesStore @Inject constructor() {
@@ -41,5 +42,22 @@ class HomeAssistantStatesStore @Inject constructor() {
     fun clear() {
         _states.value = emptyMap()
         _entities.value = emptySet()
+    }
+
+    /**
+     * Drops every imported entry whose entity is not in [entityIds] — used
+     * when a new layout retires previously synced entities without wiping
+     * the live state of the surviving ones.
+     */
+    fun retainEntities(entityIds: Set<String>) {
+        _states.update { map ->
+            map.filterKeys { key -> entityOfKey(key) in entityIds }
+        }
+        _entities.update { set -> set.filter { it in entityIds }.toSet() }
+    }
+
+    private fun entityOfKey(key: String): String {
+        val parts = key.split('.')
+        return if (parts.size > 2) parts.take(2).joinToString(".") else key
     }
 }
