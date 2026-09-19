@@ -1,6 +1,5 @@
 package com.example.astrion.services
 
-import com.example.esphomeproto.api.HomeassistantActionRequest
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -11,7 +10,7 @@ import kotlin.test.assertEquals
 class HaActionBusTest {
 
     @Test
-    fun `callService emits an action request with data map`() = runTest {
+    fun `callService emits a service call with data map`() = runTest {
         val bus = HaActionBus()
         val deferred = async { bus.requests.first() }
         yield()
@@ -21,25 +20,22 @@ class HaActionBusTest {
             mapOf("entity_id" to "remote.mi_tv", "command" to "POWER")
         )
 
-        val request: HomeassistantActionRequest = deferred.await()
+        val request: HaServiceCall = deferred.await()
         assertEquals("remote.send_command", request.service)
-        val dataMap = request.dataList.associate { it.key to it.value }
-        assertEquals("remote.mi_tv", dataMap["entity_id"])
-        assertEquals("POWER", dataMap["command"])
+        assertEquals("remote.mi_tv", request.data["entity_id"])
+        assertEquals("POWER", request.data["command"])
     }
 
     @Test
-    fun `callService keeps the given service and pairs verbatim`() = runTest {
+    fun `callService with no data emits empty map`() = runTest {
         val bus = HaActionBus()
         val deferred = async { bus.requests.first() }
         yield()
 
-        bus.callService("scene.turn_on", mapOf("entity_id" to "scene.film", "extra" to "1"))
+        bus.callService("light.turn_on")
 
-        val request = deferred.await()
-        assertEquals("scene.turn_on", request.service)
-        assertEquals(2, request.dataCount)
-        assertEquals("entity_id", request.dataList[0].key)
-        assertEquals("scene.film", request.dataList[0].value)
+        val request: HaServiceCall = deferred.await()
+        assertEquals("light.turn_on", request.service)
+        assertEquals(0, request.data.size)
     }
 }

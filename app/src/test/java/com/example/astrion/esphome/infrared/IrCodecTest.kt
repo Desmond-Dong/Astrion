@@ -1,4 +1,4 @@
-package com.example.astrion.esphome.infrared
+package com.example.astrion.panel.infrared
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

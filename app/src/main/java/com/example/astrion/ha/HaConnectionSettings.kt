@@ -39,7 +39,11 @@ data class HaConnectionSettings(
      * the astrion integration). Random on first start, never regenerated.
      */
     val serialNumber: String = "",
-)
+) {
+    /** True once host and token are configured. */
+    val isConfigured: Boolean
+        get() = host.isNotBlank() && token.isNotBlank()
+}
 
 private val DEFAULT = HaConnectionSettings()
 
@@ -73,10 +77,6 @@ interface HaConnectionSettingsStore : SettingsStore<HaConnectionSettings> {
 
     val useSsl: SettingState<Boolean>
         get() = setting(get = { useSsl }, set = { copy(useSsl = it) })
-
-    /** True once host and token are configured. */
-    val isConfigured: Boolean
-        get() = host.isNotBlank() && token.isNotBlank()
 
     /**
      * Persists the connection details in one write.
