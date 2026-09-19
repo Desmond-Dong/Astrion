@@ -254,7 +254,9 @@ fun PanelHomeScreen(
             .topEdgeSwipeToOpen(enabled = !quickSettingsOpen) { quickSettingsOpen = true }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            StatusBar(connected = connected)
+            // 原版 home_activity：IndexTopView(状态/时间条) + 下拉把手 + WiFi 提示 + 房间选择条
+            TimeTopBar(connected = connected)
+            SwipeHandle()
             if (!connected) WifiHintRow()
             RoomSelectorBar(
                 roomTitle = rooms.getOrNull(pagerState.currentPage)?.title,
@@ -281,19 +283,9 @@ fun PanelHomeScreen(
                     currentPage = pagerState.currentPage,
                     modifier = Modifier
                         .align(Alignment.CenterHorizontally)
-                        .padding(bottom = 60.dp)
+                        .padding(top = 4.dp, bottom = 10.dp)
                 )
             }
-        }
-
-        if (rooms.isNotEmpty()) {
-            BottomActionBar(
-                connected = connected,
-                onRefresh = { viewModel.refreshDevices() },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 10.dp)
-            )
         }
 
         // 快捷面板画在内容之上，触摸不会被首页拦截
@@ -320,67 +312,87 @@ fun PanelHomeScreen(
     }
 }
 
-/** 原生顶部状态条：左侧 HA 连接状态、中间大号时间、右侧电量。 */
+/** 原生 IndexTopView(view_top_view) 等价：左 WiFi 指示、中间 14sp 时间、右侧电量。
+ *  时间 HH:mm 24 小时制；电量非 null 时显示电池盒 + 百分比。 */
 @Composable
-private fun StatusBar(connected: Boolean) {
+private fun TimeTopBar(connected: Boolean) {
     val time = remember { mutableStateOf("") }
-    val date = remember { mutableStateOf("") }
     val battery = rememberBatteryLevel()
     LaunchedEffect(Unit) {
         val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val dateFmt = SimpleDateFormat("M月d日", Locale.getDefault())
         while (true) {
-            val now = Date()
-            time.value = timeFmt.format(now)
-            date.value = dateFmt.format(now)
+            time.value = timeFmt.format(Date())
             delay(30_000)
         }
     }
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .height(30.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(9.dp)
-                .background(
-                    color = if (connected) RemoteColors.secondary else RemoteColors.error,
-                    shape = CircleShape
-                )
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(text = "HA", color = RemoteColors.onSurfaceVariant, fontSize = 13.sp)
-        Spacer(Modifier.weight(1f))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .background(
+                        color = if (connected) RemoteColors.secondary else RemoteColors.error,
+                        shape = CircleShape
+                    )
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = if (connected) "WiFi" else "无网",
+                color = RemoteColors.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.weight(1f))
             Text(
                 text = time.value,
                 color = RemoteColors.topBarText,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
-            Text(text = date.value, color = RemoteColors.hintText, fontSize = 11.sp)
-        }
-        Spacer(Modifier.weight(1f))
-        if (battery != null) {
-            Text(text = "$battery%", color = RemoteColors.topBarText, fontSize = 13.sp)
-            Spacer(Modifier.width(4.dp))
-            Box(
-                modifier = Modifier
-                    .size(width = 15.dp, height = 8.dp)
-                    .border(1.dp, RemoteColors.topBarText, RoundedCornerShape(2.dp)),
-                contentAlignment = Alignment.CenterStart
-            ) {
+            Spacer(Modifier.weight(1f))
+            if (battery != null) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth((battery.toFloat() / 100f).coerceIn(0f, 1f))
-                        .padding(horizontal = 1.dp)
-                        .background(RemoteColors.topBarText)
-                        .height(4.dp)
-                )
+                        .size(width = 15.dp, height = 8.dp)
+                        .border(1.dp, RemoteColors.topBarText, RoundedCornerShape(2.dp)),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((battery.toFloat() / 100f).coerceIn(0f, 1f))
+                            .padding(horizontal = 1.dp)
+                            .background(RemoteColors.topBarText)
+                            .height(4.dp)
+                    )
+                }
+                Spacer(Modifier.width(5.dp))
+                Text(text = "$battery%", color = RemoteColors.topBarText, fontSize = 12.sp)
             }
         }
+    }
+}
+
+/** 原版下拉把手 v1：45×3dp 圆角条，marginTop 3，居中。 */
+@Composable
+private fun SwipeHandle() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 45.dp, height = 3.dp)
+                .background(RemoteColors.outline, RoundedCornerShape(2.dp))
+        )
     }
 }
 
@@ -418,7 +430,7 @@ private fun WifiHintRow() {
     }
 }
 
-/** 原生居中房间选择条 + 深色下拉。 */
+/** 原生居中房间选择条 rlViewLayout(30dp) + 原版房间名 23sp #E6CCCBCB + 三角图标。 */
 @Composable
 private fun RoomSelectorBar(
     roomTitle: String?,
@@ -429,7 +441,7 @@ private fun RoomSelectorBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(38.dp),
+            .height(30.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -444,8 +456,8 @@ private fun RoomSelectorBar(
                 overflow = TextOverflow.Ellipsis
             )
             if (roomTitles.size > 1) {
-                Spacer(Modifier.width(8.dp))
-                Text(text = "▾", color = RemoteColors.onSurfaceVariant, fontSize = 16.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(text = "▾", color = RemoteColors.accent, fontSize = 18.sp)
             }
         }
         DropdownMenu(
@@ -634,81 +646,58 @@ private fun PageDotsIndicator(
     }
 }
 
-/** 原生底部操作条：刷新/重连（设备的增删由 HA 推送 astrion_layout 管理）。 */
-@Composable
-private fun BottomActionBar(
-    connected: Boolean,
-    onRefresh: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val icon = if (connected) "↻" else "↻"
-    val label = if (connected) "刷新设备" else "重新连接"
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = RemoteColors.surfaceVariant,
-        border = BorderStroke(1.dp, RemoteColors.rowSeparator),
-        modifier = modifier.clickable(onClick = onRefresh)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = icon, color = RemoteColors.accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(8.dp))
-            Text(text = label, color = RemoteColors.accent, fontSize = 14.sp)
-        }
-    }
-}
-
-/** 原生空状态：大图标 + 三步接入指引 + 本面板地址 + 刷新按钮。 */
+/** 原版空态 rlDeviceEmpty：110dp 图标 + "暂无设备"(22sp 白) + 指引(18sp 白) +
+ *  150×50 刷新钮(18sp 白字) + 底部金色扫码提示。 */
 @Composable
 private fun EmptyLayoutHint(onRefresh: () -> Unit) {
     val panelIp = remember { getLocalIpAddress().orEmpty() }
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
     ) {
+        Spacer(Modifier.height(60.dp))
         Icon(
             painter = painterResource(R.drawable.ic_panel_host),
             contentDescription = null,
             tint = Color(0xFF2A2A2C),
             modifier = Modifier.size(110.dp)
         )
-        Spacer(Modifier.height(18.dp))
-        Text(text = "三步开始使用", color = RemoteColors.accent, fontSize = 22.sp)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+        Text(text = "暂无设备", color = Color.White, fontSize = 22.sp)
+        Spacer(Modifier.height(10.dp))
         Text(
             text = "① 让面板和手机/电脑连同一个路由器\n" +
                 "② 打开 Home Assistant → 设置 → 设备与服务 → ESPHome\n" +
-                "③ 点本面板旁边的\"采纳\"即可（列表里没有就选\"其他\"，填下面的地址）",
+                "③ 点本面板旁边的\"采纳\"即可（列表里没有就选\"其他\"，填下面的地址）\n" +
+                if (panelIp.isBlank()) "本面板地址：见 下拉面板 → 网络"
+                else "本面板地址：$panelIp  端口 6053",
             textAlign = TextAlign.Center,
-            color = RemoteColors.onSurface,
-            fontSize = 15.sp,
-            lineHeight = 24.sp
+            color = Color.White,
+            fontSize = 18.sp,
+            lineHeight = 26.sp
         )
-        Spacer(Modifier.height(18.dp))
-        Text(
-            text = if (panelIp.isBlank()) "本面板地址：见 下拉面板 → 网络"
-            else "本面板地址：$panelIp  端口 6053",
-            color = RemoteColors.accent,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.height(40.dp))
         Surface(
             shape = RoundedCornerShape(8.dp),
-            color = RemoteColors.accent,
-            modifier = Modifier.clickable(onClick = onRefresh)
+            color = Color.Transparent,
+            border = BorderStroke(1.5.dp, RemoteColors.accent),
+            modifier = Modifier
+                .size(width = 150.dp, height = 50.dp)
+                .clickable(onClick = onRefresh)
         ) {
-            Text(
-                text = "我已采纳，刷新",
-                color = Color.White,
-                fontSize = 17.sp,
-                modifier = Modifier.padding(horizontal = 36.dp, vertical = 12.dp)
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Text(text = "刷新", color = Color.White, fontSize = 18.sp)
+            }
         }
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "扫码看说明书[可扫码查看说明书]",
+            color = RemoteColors.accent,
+            fontSize = 15.sp,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        Spacer(Modifier.height(10.dp))
     }
 }
