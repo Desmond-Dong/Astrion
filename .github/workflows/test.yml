@@ -30,8 +30,5 @@ jobs:
       with:
         cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-    - name: Surface real compile errors (KSP2 hides them)
-      run: ./gradlew :app:compileDebugKotlin -x :app:kspDebugKotlin --continue || true
-
     - name: Run unit tests with Gradle Wrapper
       run: ./gradlew testDebugUnitTest

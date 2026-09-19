@@ -1,86 +1,59 @@
-# Astrion — ESPHome 遥控面板
+# Astrion — Home Assistant 红外遥控面板
 
 > **声明：本项目的全部代码均由 AI（Claude Code / ZCode 等编码代理）编写生成。**
 
-将 HA100 / Android 墙面板变成一台 **全功能智能家居遥控器 + 语音卫星**。
+将 HA100 / Android 墙面板变成一台**全功能智能家居遥控器**：直连 Home Assistant
+WebSocket API，配合 [Astrion 集成](https://github.com/Desmond-Dong/Astrion-integration)
+（`astrion`）完成配对、分类卡片布局、红外码库下发与双向事件。
 
-⚠️**Warning: This app is intended for 'static' local devices on a trusted network**⚠️
-- It exposes a port to allow incoming connections from Home Assistant with no authentication whatsoever (the device is the server in the ESPHome API).
-- It is constantly using the microphone to listen for the wake word.
+- **连接**：面板是 HA WebSocket 客户端（长寿命访问令牌认证），不再扮演 ESPHome 设备，
+  不暴露任何入站端口；语音助手已移除，设备不上麦克风。
+- **布局**：在 Astrion 集成里按分类（TV/灯光/空调/窗帘/媒体播放器/场景…）添加子条目，
+  面板通过 `astrion/get_cards` 拉取并原生渲染，改动即时生效，无需重启。
+- **红外**：码库经 `astrion/get_device_codes` 下发，按键面板本地直发（38kHz，
+  支持逗号时序 / Broadlink base64 / AES base64）；未命中回落 `remote.send_command`。
 
-App 本体**零设置**：启动即运行 ESPHome 协议服务（端口 6053，原生 API 握手），
-Home Assistant 通过 ESPHome 集成一键采纳；房间布局、IR 码库、HA 状态同步
-清单等**全部配置都在 Home Assistant 里完成**，通过设备暴露的 `text` 实体下发，
-改动约 3 秒自动生效，App 无需重启。物理按键绑定直接在面板上设置（§快捷键绑定）。
-
-界面参考原 HaRemote/Astrion 应用：深色面板、房间翻页、设备卡片网格，以及
-电视遥控（方向环/数字键盘）、空调（温度/模式/风速）、灯光（亮度/色温）、风扇
-档位、窗帘（开停关）、媒体播放、开关/场景、天气等原生设备详情页。
-
-## 一键布局（模板蓝图导入，零手写）
-
-家里设备自动按房间分组显示在面板上，不用写任何配置：
-
-1. 复制这个链接：
-   `https://raw.githubusercontent.com/Desmond-Dong/Astrion-ESPHome/master/blueprints/automation/astrion_panel_layout.yaml`
-2. Home Assistant → 设置 → 设备与服务 → 模板 → **右下角添加 → 下载蓝图**（或直接把链接贴进"导入"）
-3. 按类别勾选想出现在面板上的设备（灯/开关/空调/窗帘/媒体播放器…，可多选），保存
-4. 把刚生成的 `sensor.astrion_layout` 加入 ESPHome 面板设备的订阅（选 `sensor.astrion_layout.layout` 属性）
-
-面板自动按家里的房间分组、设备沿用 HA 名称；勾选变更、HA 重启、每天凌晨 4 点、
-设备变动时自动刷新。布局完整存放在模板 sensor 的 `layout` 属性里，不受 HA
-255 字符状态限制，也不经过任何 text 实体。物理按键的"一键直达"在遥控器上绑定：
-下拉面板 → 快捷键绑定，从同步过来的设备里任选一台。
+界面参考原 HaRemote/Astrion 应用：深色面板、房间翻页、设备卡片网格，以及电视遥控
+（方向环/数字键盘）、空调（温度/模式/风速）、灯光（亮度/色温）、风扇档位、窗帘
+（开停关）、媒体播放、开关/场景、天气等原生设备详情页。
 
 # 功能
 
-## 遥控面板（HaRemote 能力合并）
-- 房间 × 卡片的主界面：布局 JSON 由 HA 下发（对齐原 `astrion/devices` 设备树）
-- 11 类卡片原生详情页：tv / light / fan / scene / media-player / climate / cover / switch / weather / host / switch-monitor
-- 红外发射：**逗号时序 / Broadlink base64 / AES base64** 三格式自动识别（`ConsumerIrManager`，38kHz）
-- 码库由 HA 下发（`astrion_ir_codes`），按键本地直发；未命中走 `remote.send_command`
-- 设备 → HA 服务调用（`HomeassistantActionRequest`），卡片控制无需自定义集成
-- 面板 → HA 事件上行：用户跳页/按遥控键以 event 实体（`panel_page_visited`/
-  `panel_button_pressed`）+ `panel_pages` 页面清单上报，对应原集成的
-  `page_visited`/`control_command`/`navigate_list_upload`，自动化可订阅
-- 物理按键：短按/长按动态语义跟随当前设备页（原版物理键体系）+ 面板本机快捷键绑定（长按实体键即进入绑定页）
-- 导航：`navigate`（A 型，300ms 复位）与 `current_activity`（B 型持久）select，
-  HA 自动化可驱动面板跳页，面板操作也会回报 HA
-- 屏保：`screen_saver_timeout`（number，0=关闭）配置空闲超时，超时显示全屏
-  时钟/日期/电量/HA 连接状态，任意按键/触摸退出；插入充电器时短暂显示充电动画
-- 抬手唤醒：`raise_to_wake_threshold`（number，加速度阈值 m/s²，0=关闭）在面板
-  熄屏时被拿起即自动亮屏（原版 WakeupUtils 的加速度判定，带 3 秒防抖）
+## 遥控面板
+- 房间 × 卡片主界面：布局来自集成分类子条目（`astrion/get_cards` → 面板原生渲染）
+- 11 类卡片原生详情页：tv / light / fan / scene / media-player / climate / cover /
+  switch / weather / host / switch-monitor
+- 红外发射：**逗号时序 / Broadlink base64 / AES base64** 三格式自动识别
+- 码库由集成下发（`astrion/get_device_codes`），按键本地直发；未命中走 `remote.send_command`
+- 设备 → HA 服务调用（WebSocket `call_service`），卡片控制即点即用
+- 面板 → HA 事件上行：跳页（`astrion/page_visited`）、页面清单
+  （`astrion/navigate_list_upload`）、按键（`astrion/key_pressed` 等），自动化可直接订阅
+- 导航：集成的 `navigate`（A 型，300ms 复位）与 `current_activity`（B 型持久）select
+  可驱动面板跳页，面板操作也回报 HA
+- 物理按键：短按/长按动态语义跟随当前设备页 + 面板本机快捷键绑定
+  （长按实体键即进入绑定页）
+- 屏保：空闲超时显示全屏时钟/日期/电量/连接状态，任意按键/触摸退出；充电时短动画
+- 抬手唤醒：面板熄屏时被拿起即自动亮屏（加速度判定，带防抖）
 
 ## OTA 自更新
-- HA 下发 `astrion_ota_manifest`（`{version, url, sha256, force?}`）+ 按需隐藏的
-  实体；版本更新时面板弹横幅，点按或 `astrion_ota_install` 按钮触发
-  下载 → SHA-256 校验 → 安装（root 走 `pm install -r`，无 root 走系统安装确认）
-- 完全本地化，不依赖云端 OTA 服务
-
-## 语音卫星
-- 本地唤醒词（microWakeWord，最多两个模型 + 自定义模型目录）
-- 停止词、语音命令、播报与对话、计时器
-- **麦克风实体键免唤醒对话**：任何页面按下设备上的语音键（X9/HA10=131、
-  HA100=133）直接开始 Assist 对话；HA 侧 `wake_assistant` 按钮等价触发
-- **本地说话结束检测（VAD）**：说完话后面板主动结束音频流，不依赖 HA 侧 VAD
-  （部分设备/配置上服务端 VAD 不触发、会一直停在"聆听中"）；阈值/静音时长用
-  `vad_threshold` / `vad_timeout` number 实体调节，阈值 0 = 关闭
-- 唤醒词/停止词/灵敏度/降噪全部是 ESPHome 实体，在 HA 中配置并即时生效：
-  - `wake_word` / `second_wake_word` / `stop_word`（select）
-  - `wake_word_sensitivity`（number，阈值 = 1 − 灵敏度）
-  - `vad_threshold` / `vad_timeout`（number，本地说话结束检测）
-  - `audio_source` / `communication_mode` / `speakerphone` /
-    `noise_suppression` / `echo_cancellation` / `auto_gain`
-    （硬件降噪三件套挂载到采集 session，见 [音频处理](docs/AUDIO_PROCESSING.md)）
-- 外放（TTS/媒体）通过 `media_player` 实体，音量与静音在 HA 中调节
+- HA 侧触发事件 `astrion/ota_manifest`（data 为 `{version, url, sha256, force?}`），
+  面板弹横幅，点按下载 → SHA-256 校验 → 安装（root 走 `pm install -r`，
+  无 root 走系统安装确认）；完全本地化
 
 # Setup
-- 安装并运行 App，服务自动启动（无任何 App 内设置）
-- Home Assistant → ESPHome 集成采纳设备（或手动 IP + 端口 6053）
-- 布局经模板 `sensor.astrion_layout` 的 `layout` 属性下发（见 [一键布局](#一键布局模板蓝图导入零手写)），
-  IR 码库写入 `text.astrion_ir_codes`，
-- 详见 [配置指南](docs/HA_PANEL_SETUP.md)（含 JSON schema、按键码表、自动化示例、
-  语音/降噪实体说明）
+
+1. **装集成**（HA 侧）：HACS → 自定义存储库 →
+   `https://github.com/Desmond-Dong/Astrion-integration`（类别 Integration），
+   安装后重启 HA；或手动拷贝 `custom_components/my_ir` 到 HA `config/custom_components/`。
+2. **面板连 HA**：面板上下拉快捷面板 → **连接设置**，填 Home Assistant 地址、端口
+   （默认 8123）和**长寿命访问令牌**（HA 个人资料页 → 安全 → 长寿命访问令牌），保存。
+3. **配对**：面板自动向集成上报（`astrion/submit_pair_data`）；在 HA
+   设置 → 设备与服务 → **Astrion Remote** → 添加 → 选择发现的面板完成配对。
+4. **建分类**：在集成页面**添加子条目**，按分类勾选设备（TV 是三步向导：
+   设备 → 电源/音量 → 物理按键绑定）。面板几秒内自动刷新出房间和卡片。
+
+物理按键"一键直达"在遥控器上绑定：下拉面板 → 快捷键绑定。
+详细说明见 [配置指南](docs/HA_SETUP.md)。
 
 # 构建
 push 到 master 自动触发 GitHub Actions：
@@ -92,29 +65,12 @@ push 到 master 自动触发 GitHub Actions：
 替换系统 launcher 后开机直接进入面板。
 
 # Roadmap（后续批次）
-- Sendspin 多房间同步音频
-- 云码库（astrion.lifex360.com）直连拉取
+- 云码库（astrion.lifex360.com）面板直连拉取
+- 天气/主机卡片视觉增强
 
 # Development
 1. Clone the repo
 2. Open in Android Studio
 
-# Custom wake word models
-默认唤醒词见 [assets/wakeWords](app/src/main/assets/wakeWords)，也支持目录形式
-的自定义 microWakeWord 模型：把模型 `.tflite` 与合法描述 `.json` 放入设备目录，
-再从 HA 侧唤醒词 select 中选择。最小 json 示例：
-```
-{
-  "type": "micro",
-  "wake_word": "Custom Wake Word",
-  "model": "custom_wakeword.tflite",
-  "micro": {
-    "probability_cutoff": 0.97,
-    "sliding_window_size": 5
-  }
-}
-```
-
 <!-- Links -->
 [homeassistant]: https://www.home-assistant.io/
-[esphome]: https://esphome.io/
