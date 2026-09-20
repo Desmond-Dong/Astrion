@@ -114,7 +114,7 @@ class PanelService : LifecycleService() {
         // 网页配对：未配置时自动开启临时 HTTP 配对服务（手机浏览器粘贴令牌），
         // 配置成功后自动关闭。
         lifecycleScope.launch {
-            connectionSettingsStore.getFlow { it.isConfigured }.collect { configured ->
+            connectionSettingsStore.getFlow { isConfigured }.collect { configured ->
                 if (configured) enrollServer.stop() else enrollServer.start()
             }
         }
