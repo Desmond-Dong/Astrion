@@ -112,13 +112,14 @@ class HaWebSocketClient(
 
     /**
      * Sends a WebSocket command and suspends until its result arrives
-     * (or [timeoutMs] elapses). Returns the `result` object, or null.
+     * (or [timeoutMs] elapses). Returns the raw `result` element — callers
+     * cast to [JsonObject]/[JsonArray] (e.g. `get_states` returns an array).
      */
     suspend fun sendCommand(
         type: String,
         data: JsonObject = buildJsonObject { },
         timeoutMs: Long = 10_000,
-    ): JsonObject? {
+    ): JsonElement? {
         val ws = webSocket ?: return null
         val id = nextId.getAndIncrement()
         val deferred = CompletableDeferred<JsonElement?>()
@@ -133,9 +134,7 @@ class HaWebSocketClient(
             return null
         }
         return try {
-            withTimeoutOrNull(timeoutMs) { deferred.await() }?.let {
-                runCatching { it.jsonObject }.getOrNull()
-            }
+            withTimeoutOrNull(timeoutMs) { deferred.await() }
         } finally {
             pendingResults.remove(id)
         }

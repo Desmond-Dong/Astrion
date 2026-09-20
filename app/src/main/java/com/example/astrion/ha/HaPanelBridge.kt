@@ -207,7 +207,6 @@ class HaPanelBridge @Inject constructor(
             Timber.i("Paired with Home Assistant: %s", result.toString())
         }
     }
-
     // ── Layout / codebook / states ──────────────────────────────────────
 
     private suspend fun refreshLayout() {
@@ -215,7 +214,7 @@ class HaPanelBridge @Inject constructor(
         // States first so the layout adapter can resolve friendly names.
         snapshotStates()
         val result = ws.sendCommand("astrion/get_cards", buildJsonObject { })
-        val cards = result?.get("cards") as? JsonArray ?: run {
+        val cards = (result as? JsonObject)?.get("cards") as? JsonArray ?: run {
             Timber.w("get_cards returned no cards")
             return
         }
@@ -229,9 +228,12 @@ class HaPanelBridge @Inject constructor(
 
     private suspend fun snapshotStates() {
         val ws = client ?: return
-        val result = ws.sendCommand("get_states", timeoutMs = 30_000) ?: return
-        val arr = runCatching { kotlinx.serialization.json.JsonArray(result.values.toList()) }.getOrNull()
-            ?: return
+        // get_states 的 result 是 JSON 数组（不是对象），不能按对象解析。
+        val arr = ws.sendCommand("get_states", timeoutMs = 30_000) as? JsonArray ?: run {
+            Timber.w("get_states returned no array")
+            return
+        }
+        Timber.i("States snapshot: %d entities", arr.size)
         for (element in arr) {
             val obj = element as? JsonObject ?: continue
             val entityId = obj.str("entity_id") ?: continue
@@ -246,7 +248,7 @@ class HaPanelBridge @Inject constructor(
             val result = ws.sendCommand("astrion/get_device_codes", buildJsonObject {
                 put("entity_id", entityId)
             })
-            val codes = result?.get("ir_codes") as? JsonObject ?: continue
+            val codes = (result as? JsonObject)?.get("ir_codes") as? JsonObject ?: continue
             val bucket = devices.getOrPut(cardName) { mutableMapOf() }
             codes.forEach { (button, code) ->
                 (code as? JsonPrimitive)?.contentOrNull?.let { bucket[button] = it }
