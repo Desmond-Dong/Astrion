@@ -6,9 +6,6 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
@@ -16,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -280,6 +279,8 @@ fun PanelHomeScreen(
             } else {
                 HorizontalPager(
                     state = pagerState,
+                    // 预组相邻页：滑动开始前邻居页已就绪，消除滑动手势中的长帧
+                    beyondViewportPageCount = 1,
                     modifier = Modifier.weight(1f)
                 ) { page ->
                     val room = rooms.getOrNull(page)
@@ -521,27 +522,36 @@ private fun RoomDeviceList(
         }
         return
     }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize()
+    // 原版双列设备卡片网格：静态两列布局（房间设备少，Lazy 机制反而
+    // 在 Pager 滑动时产生惰性测量长帧）。
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(uniqueCards, key = { it.cardId }) { card ->
-            DeviceCard(
-                card = card,
-                name = card.displayName(haStates),
-                stateText = cardStateText(card, haStates),
-                emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
-                    card.primaryEntity?.entityId
-                        ?.let { haStates[it]?.state }
-                        ?.let { weatherEmoji(it) }
-                } else {
-                    null
-                },
-                onClick = { onOpenCard(card) }
-            )
+        uniqueCards.chunked(2).forEach { rowCards ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                rowCards.forEach { card ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        DeviceCard(
+                            card = card,
+                            name = card.displayName(haStates),
+                            stateText = cardStateText(card, haStates),
+                            emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
+                                card.primaryEntity?.entityId
+                                    ?.let { haStates[it]?.state }
+                                    ?.let { weatherEmoji(it) }
+                            } else {
+                                null
+                            },
+                            onClick = { onOpenCard(card) }
+                        )
+                    }
+                }
+                if (rowCards.size == 1) Spacer(Modifier.weight(1f))
+            }
         }
     }
 }
