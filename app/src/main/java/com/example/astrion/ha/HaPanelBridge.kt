@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -156,6 +157,7 @@ class HaPanelBridge @Inject constructor(
                 haStatesStore.importAll(batch)
             }
         }
+
         // Layout changes are uploaded as navigate lists (debounced).
         jobs += scope.launch {
             panelConfigStore.layout
