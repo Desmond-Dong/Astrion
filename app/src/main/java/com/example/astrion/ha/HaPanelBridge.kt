@@ -378,6 +378,35 @@ class HaPanelBridge @Inject constructor(
         })
     }
 
+    /**
+     * 拉取天气实体的预报（HA 标准 `weather/get_forecasts`）。
+     * 集成或实体不支持时返回 null，UI 隐藏预报区。
+     */
+    suspend fun getWeatherForecast(entityId: String): List<com.example.astrion.ha.HaWeatherForecast>? {
+        val result = client?.sendCommand(
+            "weather/get_forecasts",
+            buildJsonObject { put("entity_id", entityId) },
+            timeoutMs = 10_000
+        ) as? JsonObject ?: return null
+        val arr = result["forecast"] as? JsonArray ?: return null
+        return arr.mapNotNull { element ->
+            val o = element as? JsonObject ?: return@mapNotNull null
+            val datetime = o.str("datetime") ?: return@mapNotNull null
+            com.example.astrion.ha.HaWeatherForecast(
+                datetime = datetime,
+                condition = o.str("condition").orEmpty(),
+                temperature = o.num("temperature"),
+                templow = o.num("templow"),
+                precipitationProbability = o.num("precipitation_probability"),
+                windSpeed = o.num("wind_speed"),
+                humidity = o.num("humidity"),
+            )
+        }
+    }
+
+    private fun JsonObject.num(key: String): Double? =
+        (this[key] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
+
     private fun JsonObject.str(key: String): String? =
         (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
 

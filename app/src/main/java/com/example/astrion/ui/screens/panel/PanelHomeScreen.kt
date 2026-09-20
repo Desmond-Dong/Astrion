@@ -71,6 +71,8 @@ import com.example.astrion.services.HomeAssistantStatesStore
 import com.example.astrion.ui.DeviceDetail
 import com.example.astrion.ui.HaSettingsRoute
 import com.example.astrion.ui.ShortcutKeysRoute
+import com.example.astrion.ui.weatherEmoji
+import com.example.astrion.ui.weatherLabel
 import com.example.astrion.ui.theme.RemoteBackground
 import com.example.astrion.ui.theme.RemoteColors
 import com.example.astrion.utils.getLocalIpAddress
@@ -191,7 +193,16 @@ fun cardStateText(card: PanelCard, states: Map<String, com.example.astrion.servi
                 else -> state
             }
 
-        PanelCardTypes.WEATHER, PanelCardTypes.MEDIA_PLAYER -> {
+        PanelCardTypes.WEATHER -> {
+            if (state == "unavailable") return "不可用"
+            val unit = states["${primary.entityId}.temperature_unit"]?.state ?: "°C"
+            val temp = states["${primary.entityId}.temperature"]?.state
+                ?.trim()?.removeSuffix(".0")
+            return listOfNotNull(temp?.let { "$it$unit" }, weatherLabel(state))
+                .joinToString(" · ")
+        }
+
+        PanelCardTypes.MEDIA_PLAYER -> {
             val extra = states["${primary.entityId}.temperature"]?.state
                 ?: states["${primary.entityId}.media_title"]?.state
             if (extra != null) "$state · $extra" else state
@@ -522,6 +533,13 @@ private fun RoomDeviceList(
                 card = card,
                 name = card.displayName(haStates),
                 stateText = cardStateText(card, haStates),
+                emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
+                    card.primaryEntity?.entityId
+                        ?.let { haStates[it]?.state }
+                        ?.let { weatherEmoji(it) }
+                } else {
+                    null
+                },
                 onClick = { onOpenCard(card) }
             )
         }
@@ -533,10 +551,12 @@ private fun DeviceCard(
     card: PanelCard,
     name: String,
     stateText: String,
+    emoji: String? = null,
     onClick: () -> Unit,
 ) {
     // 原版 index_device_*_item：无卡片盒子，居中 50dp 原版彩色状态图标
     // (alpha 0.8) + 下方 #BFBDBD 名称 + 左侧 4dp 白点表示开机。
+    // 天气卡片用 emoji 实况图标替代图标位，状态行显示 温度·天气。
     val isOn = stateText.contains("开启") || stateText.contains("打开") ||
         stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
     val isOffline = stateText.contains("不可用") || stateText.contains("unavailable")
@@ -552,15 +572,24 @@ private fun DeviceCard(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = card.resolvedType,
-                tint = Color.Unspecified,
-                modifier = Modifier
-                    .size(50.dp)
-                    .alpha(0.8f)
-            )
-            Spacer(Modifier.height(6.dp))
+            if (emoji != null) {
+                Text(
+                    text = emoji,
+                    fontSize = 44.sp,
+                    modifier = Modifier.height(56.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+            } else {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = card.resolvedType,
+                    tint = Color.Unspecified,
+                    modifier = Modifier
+                        .size(50.dp)
+                        .alpha(0.8f)
+                )
+                Spacer(Modifier.height(6.dp))
+            }
             Text(
                 text = name,
                 color = Color(0xFFBFBDBD),
@@ -571,6 +600,14 @@ private fun DeviceCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.height(40.dp)
             )
+            if (card.resolvedType == PanelCardTypes.WEATHER && !isOffline) {
+                Text(
+                    text = stateText,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
         if (isOn) {
             Box(

@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,8 +84,12 @@ import com.example.astrion.panel.PanelConfigStore
 import com.example.astrion.ui.DeviceDetail
 import com.example.astrion.ui.components.NativeSlider
 import com.example.astrion.ui.components.holdRepeat
+import com.example.astrion.ui.forecastTimeLabel
 import com.example.astrion.ui.theme.RemoteBackground
 import com.example.astrion.ui.theme.RemoteColors
+import com.example.astrion.ui.weatherEmoji
+import com.example.astrion.ui.weatherLabel
+import com.example.astrion.ui.windBearingLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -94,6 +99,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 import javax.inject.Inject
 
 /** 物理键长按自动重复（原版 200ms 间隔）。 */
@@ -261,6 +267,7 @@ class DeviceDetailViewModel @Inject constructor(
     haStatesStore: HomeAssistantStatesStore,
     private val cardController: CardController,
     private val keyRouter: KeyRouter,
+    private val panelBridge: com.example.astrion.ha.HaPanelBridge,
 ) : ViewModel() {
     private val route = savedStateHandle.toRoute<DeviceDetail>()
 
@@ -269,6 +276,10 @@ class DeviceDetailViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val haStates = haStatesStore.states
+
+    /** 天气预报（weather/get_forecasts），不支持时返回 null。 */
+    suspend fun loadForecast(entityId: String): List<com.example.astrion.ha.HaWeatherForecast>? =
+        panelBridge.getWeatherForecast(entityId)
 
     /** 物理键长按自动重复（原版 200ms 间隔），松手 cancel 停止。 */
     private var holdJob: Job? = null
@@ -431,7 +442,7 @@ fun DeviceDetailScreen(
             PanelCardTypes.COVER -> CoverContent(current, haStates, viewModel)
             PanelCardTypes.MEDIA_PLAYER -> MediaContent(current, haStates, viewModel)
             PanelCardTypes.SWITCH, PanelCardTypes.SCENE -> SwitchSceneContent(current, haStates, viewModel)
-            PanelCardTypes.WEATHER -> WeatherContent(current, haStates)
+            PanelCardTypes.WEATHER -> WeatherContent(current, haStates, viewModel)
             else -> GenericContent(current, haStates)
         }
     }
@@ -2583,35 +2594,162 @@ private fun SwitchSceneContent(
     }
 }
 
-// ── Weather (§3.10.4 ⑳) ────────────────────────────────────────────────
+// ── Weather (§3.10.4 ⑳) — 原版天气卡片：实况大字 + 详情 + 预报 ──────────
 
 @Composable
 private fun WeatherContent(
     card: PanelCard,
     haStates: Map<String, HaEntityState>,
+    viewModel: DeviceDetailViewModel,
 ) {
     val entityId = card.primaryEntity?.entityId
     val condition = stateOf(card, haStates) ?: "--"
-    val temperature = entityId?.let { haStates["$it.temperature"]?.state }
-    val humidity = entityId?.let { haStates["$it.humidity"]?.state }
+    val unit = stateOf(card, haStates, "temperature_unit") ?: "°C"
+    val temperature = stateOf(card, haStates, "temperature")?.trim()?.removeSuffix(".0")
+    val humidity = stateOf(card, haStates, "humidity")
+    val windSpeed = stateOf(card, haStates, "wind_speed")
+    val windSpeedUnit = stateOf(card, haStates, "wind_speed_unit") ?: "km/h"
+    val pressure = stateOf(card, haStates, "pressure")
+    val pressureUnit = stateOf(card, haStates, "pressure_unit") ?: "hPa"
+    val windBearing = stateOf(card, haStates, "wind_bearing")?.toIntOrNull()
+
+    // 预报：走 HA 标准 weather/get_forecasts，不支持时整块隐藏
+    var forecast by remember { mutableStateOf<List<com.example.astrion.ha.HaWeatherForecast>?>(null) }
+    LaunchedEffect(entityId) {
+        if (entityId != null) {
+            forecast = runCatching { viewModel.loadForecast(entityId) }.getOrNull()
+        }
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = if (temperature != null) "$temperature℃" else "--",
-            fontSize = 72.sp,
-            fontWeight = FontWeight.Bold,
-            color = RemoteColors.onSurface
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(text = condition, fontSize = 20.sp, color = RemoteColors.onSurfaceVariant)
-        if (humidity != null) {
-            Spacer(Modifier.height(4.dp))
-            InfoLine("湿度 $humidity%")
+        Spacer(Modifier.height(16.dp))
+
+        // 原版天气实况：大 emoji + 大字温度
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = weatherEmoji(condition), fontSize = 60.sp)
+            Spacer(Modifier.width(18.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    text = temperature ?: "--",
+                    fontSize = 64.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = RemoteColors.onSurface
+                )
+                Text(
+                    text = unit,
+                    fontSize = 20.sp,
+                    color = RemoteColors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
         }
+        Text(
+            text = weatherLabel(condition),
+            fontSize = 20.sp,
+            color = RemoteColors.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+
+        Spacer(Modifier.height(26.dp))
+
+        // 实况详情：湿度 / 风速 / 气压 / 风向
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            WeatherInfoTile("湿度", humidity?.let { "$it%" })
+            WeatherInfoTile("风速", windSpeed?.let { "$it $windSpeedUnit" })
+            WeatherInfoTile("气压", pressure?.let { "$it $pressureUnit" })
+            WeatherInfoTile("风向", windBearingLabel(windBearing))
+        }
+
+        // 预报
+        forecast?.takeIf { it.isNotEmpty() }?.let { list ->
+            Text(
+                text = "预报",
+                color = RemoteColors.onSurfaceVariant,
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 28.dp, start = 20.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                list.take(10).forEach { item ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = RemoteColors.surfaceVariant,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            val daily = item.templow != null
+                            Text(
+                                text = forecastTimeLabel(item.datetime, daily),
+                                color = RemoteColors.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(text = weatherEmoji(item.condition), fontSize = 26.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = item.temperature?.roundToInt()?.toString()?.plus("°")
+                                        ?: "--",
+                                    color = RemoteColors.onSurface,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (daily) {
+                                    Text(
+                                        text = " ${item.templow?.roundToInt()?.toString()?.plus("°") ?: ""}",
+                                        color = RemoteColors.onSurfaceVariant,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                            item.precipitationProbability?.let { pp ->
+                                Text(
+                                    text = "💧${pp.roundToInt()}%",
+                                    color = RemoteColors.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeatherInfoTile(label: String, value: String?) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value ?: "--",
+            color = RemoteColors.onSurface,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = label,
+            color = RemoteColors.onSurfaceVariant,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 2.dp)
+        )
     }
 }
 
