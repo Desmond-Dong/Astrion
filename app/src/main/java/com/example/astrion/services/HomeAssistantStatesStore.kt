@@ -39,6 +39,24 @@ class HomeAssistantStatesStore @Inject constructor() {
         _entities.update { it + state.entityId }
     }
 
+    /**
+     * 批量导入（状态快照用）：一次性合并，避免逐条 import 在大表上
+     * 反复整表复制把主线程卡出 ANR。
+     */
+    fun importAll(entries: Collection<HaEntityState>) {
+        if (entries.isEmpty()) return
+        _states.update { current ->
+            val merged = current.toMutableMap()
+            for (state in entries) {
+                val key = if (state.attribute.isEmpty()) state.entityId
+                else "${state.entityId}.${state.attribute}"
+                merged[key] = state
+            }
+            merged
+        }
+        _entities.update { current -> current + entries.map { it.entityId } }
+    }
+
     fun clear() {
         _states.value = emptyMap()
         _entities.value = emptySet()

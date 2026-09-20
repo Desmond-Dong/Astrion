@@ -234,11 +234,18 @@ class HaPanelBridge @Inject constructor(
             return
         }
         Timber.i("States snapshot: %d entities", arr.size)
-        for (element in arr) {
-            val obj = element as? JsonObject ?: continue
-            val entityId = obj.str("entity_id") ?: continue
-            importState(entityId, obj)
+        // 解析 + 批量导入放到后台线程：几千个实体的解析和合并很重，
+        // 在主线程做会把面板卡出 ANR。
+        val entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            buildList {
+                for (element in arr) {
+                    val obj = element as? JsonObject ?: continue
+                    val entityId = obj.str("entity_id") ?: continue
+                    appendAll(importStatesOf(entityId, obj))
+                }
+            }
         }
+        haStatesStore.importAll(entries)
     }
 
     private suspend fun refreshCodebook(remoteEntityToCardName: Map<String, String>) {
@@ -308,11 +315,17 @@ class HaPanelBridge @Inject constructor(
     }
 
     private fun importState(entityId: String, obj: JsonObject) {
-        val state = obj.str("state") ?: return
-        haStatesStore.import(HaEntityState(entityId, state))
+        for (state in importStatesOf(entityId, obj)) haStatesStore.import(state)
+    }
+
+    /** 把一个 HA 状态对象展开为“裸状态 + 各属性”的导入条目（不落库）。 */
+    private fun importStatesOf(entityId: String, obj: JsonObject): List<HaEntityState> {
+        val state = obj.str("state") ?: return emptyList()
+        val entries = mutableListOf(HaEntityState(entityId, state))
         (obj["attributes"] as? JsonObject)?.forEach { (attr, value) ->
-            haStatesStore.import(HaEntityState(entityId, attributeValueAsString(value), attr))
+            entries.add(HaEntityState(entityId, attributeValueAsString(value), attr))
         }
+        return entries
     }
 
     private fun subscribedEntityIds(): Set<String> =
