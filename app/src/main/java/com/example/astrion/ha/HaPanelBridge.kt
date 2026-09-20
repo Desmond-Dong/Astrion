@@ -237,11 +237,11 @@ class HaPanelBridge @Inject constructor(
         // 解析 + 批量导入放到后台线程：几千个实体的解析和合并很重，
         // 在主线程做会把面板卡出 ANR。
         val entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            buildList {
+            buildList<HaEntityState> {
                 for (element in arr) {
                     val obj = element as? JsonObject ?: continue
                     val entityId = obj.str("entity_id") ?: continue
-                    appendAll(importStatesOf(entityId, obj))
+                    addAll(importStatesOf(entityId, obj))
                 }
             }
         }
