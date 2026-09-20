@@ -77,6 +77,18 @@ class HaSettingsViewModel @Inject constructor(
     val serialNumber = connectionSettingsStore.getFlow { serialNumber }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    /** 保存前先验证 HA 连接；结果反馈到 UI。 */
+    sealed interface SaveState {
+        data object Idle : SaveState
+        data object Verifying : SaveState
+        data object Saved : SaveState
+        data class Failed(val reason: String) : SaveState
+    }
+
+    private val _saveState = kotlinx.coroutines.flow.MutableStateFlow<SaveState>(SaveState.Idle)
+    val saveState: kotlinx.coroutines.flow.StateFlow<SaveState> =
+        _saveState
+
     suspend fun loadSettings(): com.example.astrion.ha.HaConnectionSettings =
         connectionSettingsStore.get()
 
@@ -86,9 +98,24 @@ class HaSettingsViewModel @Inject constructor(
 
     fun save(name: String, host: String, port: Int, token: String, useSsl: Boolean) {
         viewModelScope.launch {
-            connectionSettingsStore.update(name, host, port, token, useSsl)
-            // The client picks the new settings up on its next reconnect.
-            panelBridge.reconnect()
+            _saveState.value = SaveState.Verifying
+            val current = connectionSettingsStore.get()
+            val mergedToken = token.trim().ifBlank { current.token }
+            // 先验证：真实握手 + 令牌认证，验证通过才写入（写错配置就连不上 HA）
+            when (
+                val result = com.example.astrion.ha.HaConnectionProbe.test(
+                    host = host.trim(), port = port, token = mergedToken, useSsl = useSsl
+                )
+            ) {
+                is com.example.astrion.ha.HaConnectionProbe.Result.Ok -> {
+                    connectionSettingsStore.update(name, host, port, mergedToken, useSsl)
+                    panelBridge.reconnect()
+                    _saveState.value = SaveState.Saved
+                }
+
+                is com.example.astrion.ha.HaConnectionProbe.Result.Failure ->
+                    _saveState.value = SaveState.Failed(result.reason)
+            }
         }
     }
 }
@@ -299,12 +326,31 @@ fun HaSettingsScreen(
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
+                val saveState by viewModel.saveState.collectAsStateWithLifecycle()
+                val verifying = saveState == HaSettingsViewModel.SaveState.Verifying
+                if (saveState is HaSettingsViewModel.SaveState.Failed) {
+                    Text(
+                        text = "❌ ${(saveState as HaSettingsViewModel.SaveState.Failed).reason}" +
+                                "（未保存）",
+                        color = RemoteColors.error,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+                if (saveState == HaSettingsViewModel.SaveState.Saved) {
+                    Text(
+                        text = "✅ 验证通过，已保存并重连",
+                        color = RemoteColors.secondary,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = RemoteColors.accent,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
+                        .clickable(enabled = !verifying) {
                             viewModel.save(
                                 name = name,
                                 host = host,
@@ -315,7 +361,7 @@ fun HaSettingsScreen(
                         }
                 ) {
                     Text(
-                        text = "保存并重连",
+                        text = if (verifying) "验证中…（约数秒）" else "验证并保存",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,

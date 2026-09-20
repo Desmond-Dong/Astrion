@@ -78,10 +78,35 @@ class HaEnrollServer @Inject constructor(
                     writeResponse(sock, 200, formPage())
 
                 request.method == "POST" && request.path.startsWith("/save") -> {
-                    val saved = applyForm(parseForm(request.body))
-                    writeResponse(sock, 200, if (saved) resultOkPage() else resultFailPage())
-                    // 保存成功 = 配对完成，服务自停（重配对时可再手动开启）
-                    if (saved) stop()
+                    // 先验证，验证通过才写入配置（写错配置面板就连不上 HA）
+                    val form = parseForm(request.body)
+                    val candidate = mergeForm(form)
+                    val probe = when {
+                        candidate.host.isBlank() || candidate.token.isBlank() ->
+                            HaConnectionProbe.Result.Failure("地址与令牌都不能为空（已有令牌可留空）")
+
+                        else -> HaConnectionProbe.test(
+                            host = candidate.host,
+                            port = candidate.port,
+                            token = candidate.token,
+                            useSsl = candidate.useSsl
+                        )
+                    }
+                    when (probe) {
+                        is HaConnectionProbe.Result.Ok -> {
+                            settingsStore.update(
+                                candidate.name, candidate.host, candidate.port,
+                                candidate.token, candidate.useSsl
+                            )
+                            panelBridge.reconnect()
+                            writeResponse(sock, 200, resultOkPage())
+                            // 保存成功 = 配对完成，服务自停（重配对时可再手动开启）
+                            stop()
+                        }
+
+                        is HaConnectionProbe.Result.Failure ->
+                            writeResponse(sock, 200, resultFailPage(probe.reason))
+                    }
                 }
 
                 else -> writeResponse(sock, 404, notFoundPage())
@@ -89,19 +114,17 @@ class HaEnrollServer @Inject constructor(
         }
     }
 
-    private suspend fun applyForm(form: Map<String, String>): Boolean {
+    /** 表单 + 现有配置合成候选配置（令牌留空 = 保持现有令牌）。 */
+    private suspend fun mergeForm(form: Map<String, String>): HaConnectionSettings {
         val current = settingsStore.get()
-        val host = form["host"]?.trim().orEmpty()
-        val port = form["port"]?.trim()?.toIntOrNull()?.coerceIn(1, 65535) ?: current.port
-        // 令牌留空 = 保持现有令牌（重新配对时只改地址）
-        val token = form["token"]?.trim().orEmpty().ifBlank { current.token }
-        val name = form["name"]?.trim().orEmpty().ifBlank { current.name }
-        val useSsl = form.containsKey("useSsl")
-        if (host.isBlank() || token.isBlank()) return false
-        return runCatching {
-            settingsStore.update(name, host, port, token, useSsl)
-            panelBridge.reconnect()
-        }.isSuccess
+        return HaConnectionSettings(
+            name = form["name"]?.trim().orEmpty().ifBlank { current.name },
+            host = form["host"]?.trim().orEmpty(),
+            port = form["port"]?.trim()?.toIntOrNull()?.coerceIn(1, 65535) ?: current.port,
+            token = form["token"]?.trim().orEmpty().ifBlank { current.token },
+            useSsl = form.containsKey("useSsl"),
+            serialNumber = current.serialNumber
+        )
     }
 
     // ── 最小 HTTP/1.1 解析 ──────────────────────────────────────────────
@@ -215,16 +238,18 @@ class HaEnrollServer @Inject constructor(
         <meta name="viewport" content="width=device-width,initial-scale=1"><title>已保存</title>
         <style>body{font-family:sans-serif;background:#141414;color:#eee;max-width:520px;
         margin:0 auto;padding:16px}a{color:#4a7dff}</style></head><body>
-        <h2>✅ 已保存</h2><p>面板正在连接 Home Assistant，几秒后可在面板屏幕上查看
-        连接状态（下拉快捷面板也能看到）。</p><p><a href="/">返回修改</a></p></body></html>
+        <h2>✅ 验证通过，已保存</h2><p>面板正在连接 Home Assistant，几秒后可在面板屏幕上
+        查看连接状态（下拉快捷面板也能看到）。配对服务已自动关闭。</p>
+        <p><a href="/">返回</a></p></body></html>
     """.trimIndent()
 
-    private fun resultFailPage(): String = """
+    private fun resultFailPage(reason: String): String = """
         <!doctype html><html lang="zh"><head><meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1"><title>保存失败</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1"><title>验证失败</title>
         <style>body{font-family:sans-serif;background:#141414;color:#eee;max-width:520px;
-        margin:0 auto;padding:16px}a{color:#4a7dff}</style></head><body>
-        <h2>❌ 保存失败</h2><p>地址与令牌都不能为空（已有令牌时可留空）。</p>
+        margin:0 auto;padding:16px}a{color:#4a7dff}p{color:#ccc}</style></head><body>
+        <h2>❌ 验证失败（未保存）</h2><p>${escape(reason)}</p>
+        <p>请检查 Home Assistant 地址、端口（默认 8123）与长寿命访问令牌。</p>
         <p><a href="/">返回重填</a></p></body></html>
     """.trimIndent()
 
