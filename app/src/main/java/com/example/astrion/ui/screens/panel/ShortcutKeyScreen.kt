@@ -67,12 +67,15 @@ import javax.inject.Inject
 class ShortcutKeysViewModel @Inject constructor(
     panelConfigStore: PanelConfigStore,
     shortcutBindingStore: ShortcutBindingStore,
+    haStatesStore: com.example.astrion.services.HomeAssistantStatesStore,
     private val keyRouter: KeyRouter,
 ) : ViewModel() {
     val bindings = shortcutBindingStore.bindings
 
     val layout = panelConfigStore.effectiveLayout
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PanelLayout())
+
+    val haStates = haStatesStore.states
 
     /** 绑定页/列表页打开期间吞掉物理键，避免误触发（原版绑定页 swallow）。 */
     private val swallow: suspend (KeyPress) -> Boolean = { true }
@@ -92,7 +95,7 @@ class ShortcutKeysViewModel @Inject constructor(
             "DeviceRoom" -> "房间 · ${binding.uuid}"
             else -> layout.value.rooms.flatMap { it.cards }
                 .firstOrNull { it.cardId == binding.uuid }
-                ?.let { it.name.ifBlank { it.primaryEntity?.entityId ?: it.cardId } }
+                ?.let { it.displayName(haStates.value) }
                 ?: binding.uuid
         }
     }
@@ -181,6 +184,7 @@ fun ShortcutKeysScreen(
 class ShortcutBindViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     panelConfigStore: PanelConfigStore,
+    haStatesStore: com.example.astrion.services.HomeAssistantStatesStore,
     private val shortcutBindingStore: ShortcutBindingStore,
     private val keyRouter: KeyRouter,
 ) : ViewModel() {
@@ -188,6 +192,8 @@ class ShortcutBindViewModel @Inject constructor(
 
     val layout = panelConfigStore.effectiveLayout
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PanelLayout())
+
+    val haStates = haStatesStore.states
 
     private val swallow: suspend (KeyPress) -> Boolean = { true }
 
@@ -215,6 +221,7 @@ fun ShortcutBindScreen(
     viewModel: ShortcutBindViewModel = hiltViewModel(),
 ) {
     val layout by viewModel.layout.collectAsStateWithLifecycle()
+    val haStates by viewModel.haStates.collectAsStateWithLifecycle()
     val current = remember { viewModel.currentBinding() }
     // 任意键都能绑：设备（全部同步设备）/ 场景 / 房间
     var tab by remember {
@@ -301,9 +308,7 @@ fun ShortcutBindScreen(
                         items(cards.size, key = { cards[it].cardId }) { index ->
                             val card = cards[index]
                             BindRow(
-                                title = card.name.ifBlank {
-                                    card.primaryEntity?.entityId ?: card.cardId
-                                },
+                                title = card.displayName(haStates),
                                 subtitle = "场景",
                                 selected = selected?.type == "Device" && selected?.uuid == card.cardId,
                                 onClick = {
@@ -322,9 +327,7 @@ fun ShortcutBindScreen(
                         items(cards.size, key = { cards[it].cardId }) { index ->
                             val card = cards[index]
                             BindRow(
-                                title = card.name.ifBlank {
-                                    card.primaryEntity?.entityId ?: card.cardId
-                                },
+                                title = card.displayName(haStates),
                                 subtitle = deviceTypeLabel(card),
                                 selected = selected?.type == "Device" && selected?.uuid == card.cardId,
                                 onClick = {
