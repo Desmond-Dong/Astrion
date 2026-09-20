@@ -29,6 +29,12 @@ class PanelService : LifecycleService() {
     lateinit var panelBridge: com.example.astrion.ha.HaPanelBridge
 
     @Inject
+    lateinit var enrollServer: com.example.astrion.ha.HaEnrollServer
+
+    @Inject
+    lateinit var connectionSettingsStore: com.example.astrion.ha.HaConnectionSettingsStore
+
+    @Inject
     lateinit var raiseToWakeController: RaiseToWakeController
 
     private val wifiWakeLock = WifiWakeLock()
@@ -105,6 +111,13 @@ class PanelService : LifecycleService() {
                 wifiWakeLock.acquire()
             }
         }
+        // 网页配对：未配置时自动开启临时 HTTP 配对服务（手机浏览器粘贴令牌），
+        // 配置成功后自动关闭。
+        lifecycleScope.launch {
+            connectionSettingsStore.getFlow { it.isConfigured }.collect { configured ->
+                if (configured) enrollServer.stop() else enrollServer.start()
+            }
+        }
         // Stick around: the panel is a dedicated always-on appliance.
         return START_STICKY
     }
@@ -121,6 +134,7 @@ class PanelService : LifecycleService() {
         .launchIn(lifecycleScope)
 
     override fun onDestroy() {
+        enrollServer.stop()
         panelBridge.stop()
         raiseToWakeController.stop()
         wifiWakeLock.release()

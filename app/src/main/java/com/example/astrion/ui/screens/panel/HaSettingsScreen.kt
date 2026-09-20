@@ -64,10 +64,14 @@ import javax.inject.Inject
 @HiltViewModel
 class HaSettingsViewModel @Inject constructor(
     private val connectionSettingsStore: HaConnectionSettingsStore,
+    private val enrollServer: com.example.astrion.ha.HaEnrollServer,
     val panelBridge: HaPanelBridge,
 ) : ViewModel() {
     val connectionState = panelBridge.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HaConnectionState.Disconnected)
+
+    /** 网页配对服务状态（原版思路：临时 HTTP 服务，浏览器粘贴令牌）。 */
+    val enrollRunning = enrollServer.running
 
     /** Serial number (gateway identity) shown read-only for reference. */
     val serialNumber = connectionSettingsStore.getFlow { serialNumber }
@@ -75,6 +79,10 @@ class HaSettingsViewModel @Inject constructor(
 
     suspend fun loadSettings(): com.example.astrion.ha.HaConnectionSettings =
         connectionSettingsStore.get()
+
+    fun startEnroll() = enrollServer.start()
+
+    fun stopEnroll() = enrollServer.stop()
 
     fun save(name: String, host: String, port: Int, token: String, useSsl: Boolean) {
         viewModelScope.launch {
@@ -153,6 +161,91 @@ fun HaSettingsScreen(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
         ) {
+            // ── 网页配对（推荐，免键盘）──────────────────────────────
+            val enrollRunning by viewModel.enrollRunning.collectAsStateWithLifecycle()
+            val panelIp = remember { com.example.astrion.utils.getLocalIpAddress().orEmpty() }
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = RemoteColors.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "网页配对（推荐，免键盘）",
+                        color = RemoteColors.onSurface,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    if (enrollRunning) {
+                        Text(
+                            text = "手机/电脑浏览器打开：",
+                            color = RemoteColors.onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "http://$panelIp:${com.example.astrion.ha.HaEnrollServer.PORT}",
+                            color = RemoteColors.accent,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "在网页表单里粘贴 HA 地址与令牌，提交后面板自动连接。",
+                            color = RemoteColors.onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = RemoteColors.key,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.stopEnroll() }
+                        ) {
+                            Text(
+                                text = "停止网页配对",
+                                color = RemoteColors.onSurface,
+                                fontSize = 14.sp,
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(vertical = 10.dp)
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "屏幕太小不好输令牌？启动后在同一 WiFi 下用手机/电脑" +
+                                    "浏览器打开面板地址，粘贴令牌提交即可。",
+                            color = RemoteColors.onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = RemoteColors.accent,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.startEnroll() }
+                        ) {
+                            Text(
+                                text = "启动网页配对",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = "手动输入（高级）",
+                color = RemoteColors.onSurfaceVariant,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
             if (loaded) {
                 SettingsField(
                     label = "设备名称",

@@ -45,8 +45,9 @@ WebSocket API，配合 [Astrion 集成](https://github.com/Desmond-Dong/Astrion-
 1. **装集成**（HA 侧）：HACS → 自定义存储库 →
    `https://github.com/Desmond-Dong/Astrion-integration`（类别 Integration），
    安装后重启 HA；或手动拷贝 `custom_components/my_ir` 到 HA `config/custom_components/`。
-2. **面板连 HA**：面板上下拉快捷面板 → **连接设置**，填 Home Assistant 地址、端口
-   （默认 8123）和**长寿命访问令牌**（HA 个人资料页 → 安全 → 长寿命访问令牌），保存。
+2. **面板连 HA（网页配对，免键盘）**：创建 HA **长寿命访问令牌**（个人资料页 →
+   安全 → 长寿命访问令牌）；用手机/电脑浏览器打开面板显示的
+   `http://<面板IP>:8917`，在表单里粘贴 HA 地址与令牌提交，面板立即连接。
 3. **配对**：面板自动向集成上报（`astrion/submit_pair_data`）；在 HA
    设置 → 设备与服务 → **Astrion Remote** → 添加 → 选择发现的面板完成配对。
 4. **建分类**：在集成页面**添加子条目**，按分类勾选设备（TV 是三步向导：

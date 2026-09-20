@@ -259,7 +259,13 @@ fun PanelHomeScreen(
             )
 
             if (rooms.isEmpty()) {
-                EmptyLayoutHint(onRefresh = { viewModel.refreshDevices() })
+                val pairingUrl = if (!connected) {
+                    com.example.astrion.utils.getLocalIpAddress()
+                        ?.let { "http://$it:${com.example.astrion.ha.HaEnrollServer.PORT}" }
+                } else {
+                    null
+                }
+                EmptyLayoutHint(pairingUrl = pairingUrl, onRefresh = { viewModel.refreshDevices() })
             } else {
                 HorizontalPager(
                     state = pagerState,
@@ -642,7 +648,7 @@ private fun PageDotsIndicator(
 /** 原版空态 rlDeviceEmpty：110dp 图标 + "暂无设备"(22sp 白) + 指引(18sp 白) +
  *  150×50 刷新钮(18sp 白字) + 底部金色扫码提示。 */
 @Composable
-private fun EmptyLayoutHint(onRefresh: () -> Unit) {
+private fun EmptyLayoutHint(pairingUrl: String?, onRefresh: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -660,10 +666,18 @@ private fun EmptyLayoutHint(onRefresh: () -> Unit) {
         Text(text = "暂无设备", color = Color.White, fontSize = 22.sp)
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "① 让面板和 Home Assistant 连同一个路由器\n" +
-                "② 下拉打开 快捷设置 → 连接设置，填 HA 地址和长寿命访问令牌\n" +
-                "③ 面板自动配对后，在 HA「设置 → 设备与服务 → Astrion Remote」" +
-                "的子条目里配置分类卡片",
+            text = buildString {
+                if (pairingUrl != null) {
+                    append("① 手机/电脑浏览器打开\n")
+                    append("$pairingUrl\n")
+                    append("② 在网页里粘贴 HA 地址与访问令牌，提交后面板自动连接\n")
+                    append("③ 也可下拉 → 连接设置 手动填写")
+                } else {
+                    append("已连接 Home Assistant，但集成里还没有分类卡片。\n")
+                    append("在 HA「Astrion Remote」集成页面添加子条目并勾选设备，\n")
+                    append("面板几秒内自动刷新。")
+                }
+            },
             textAlign = TextAlign.Center,
             color = Color.White,
             fontSize = 18.sp,
