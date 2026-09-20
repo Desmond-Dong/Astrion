@@ -98,7 +98,8 @@ class HaWebSocketClient(
     fun connect() {
         if (running) return
         running = true
-        loopJob = scope.launch { reconnectLoop() }
+        // 收发循环放 Default：每条事件都要 JSON 解析，主线程做会把面板卡顿
+        loopJob = scope.launch(kotlinx.coroutines.Dispatchers.Default) { reconnectLoop() }
     }
 
     fun disconnect() {

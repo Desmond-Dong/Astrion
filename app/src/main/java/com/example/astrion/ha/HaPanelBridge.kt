@@ -80,6 +80,13 @@ class HaPanelBridge @Inject constructor(
     @Volatile
     private var serialNumber: String = ""
 
+    /** 待合并导入的实体状态（原版思路：状态回写聚合，避免逐条刷 UI）。 */
+    private val pendingStates = java.util.concurrent.ConcurrentLinkedQueue<HaEntityState>()
+
+    /** 当前布局的订阅实体 id（随布局更新，避免每条事件重复计算）。 */
+    @Volatile
+    private var subscribedIds: Set<String> = emptySet()
+
     fun start(scope: CoroutineScope) {
         this.scope = scope
         if (jobs.isNotEmpty()) return
@@ -97,7 +104,8 @@ class HaPanelBridge @Inject constructor(
             }
         }
         // Event dispatch survives reconnects (the client object persists).
-        jobs += scope.launch {
+        // Default 线程：事件解析/导入不在主线程做（原版思路——IO 与 UI 分离）。
+        jobs += scope.launch(kotlinx.coroutines.Dispatchers.Default) {
             ws.incoming.collect { handleEvent(it) }
         }
         observePanelSide(scope)
@@ -127,7 +135,26 @@ class HaPanelBridge @Inject constructor(
     private fun observePanelSide(scope: CoroutineScope) {
         // Keep the latest layout for the state-changed filter and uploads.
         jobs += scope.launch {
-            panelConfigStore.layout.collect { currentLayout = it }
+            panelConfigStore.layout.collect { layout ->
+                currentLayout = layout
+                subscribedIds = layout.rooms.flatMap { it.cards }
+                    .flatMap { it.entities }
+                    .map { it.entityId }
+                    .filter { it.isNotBlank() }
+                    .toSet()
+            }
+        }
+        // 状态导入聚合：200ms 窗口内的所有实体状态合并成一次写入/一次 UI 刷新
+        // （原版对控制回写做节流/用户控制窗口，同思路）。
+        jobs += scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            while (kotlinx.coroutines.isActive) {
+                delay(200)
+                if (pendingStates.isEmpty()) continue
+                val batch = buildList {
+                    while (true) pendingStates.poll()?.let { add(it) } ?: break
+                }
+                haStatesStore.importAll(batch)
+            }
         }
         // Layout changes are uploaded as navigate lists (debounced).
         jobs += scope.launch {
@@ -306,16 +333,13 @@ class HaPanelBridge @Inject constructor(
         }
     }
 
-    private suspend fun ingestStateChanged(data: JsonObject) {
+    private fun ingestStateChanged(data: JsonObject) {
         val entityId = data.str("entity_id") ?: return
         // Removed states are ignored; the next layout refresh prunes them.
         val newState = data["new_state"] as? JsonObject ?: return
-        if (entityId !in subscribedEntityIds()) return
-        importState(entityId, newState)
-    }
-
-    private fun importState(entityId: String, obj: JsonObject) {
-        for (state in importStatesOf(entityId, obj)) haStatesStore.import(state)
+        if (entityId !in subscribedIds) return
+        // 入队待聚合（200ms 窗口批量写入，见 observePanelSide）
+        pendingStates.addAll(importStatesOf(entityId, newState))
     }
 
     /** 把一个 HA 状态对象展开为“裸状态 + 各属性”的导入条目（不落库）。 */
@@ -327,13 +351,6 @@ class HaPanelBridge @Inject constructor(
         }
         return entries
     }
-
-    private fun subscribedEntityIds(): Set<String> =
-        currentLayout.rooms.flatMap { it.cards }
-            .flatMap { it.entities }
-            .map { it.entityId }
-            .filter { it.isNotBlank() }
-            .toSet()
 
     // ── HA service calls ────────────────────────────────────────────────
 
@@ -353,10 +370,9 @@ class HaPanelBridge @Inject constructor(
             }
             put("service_data", data)
         }
-        val result = ws.sendCommand("call_service", message, timeoutMs = 8_000)
-        if (result == null) {
-            Timber.w("Service call failed: %s", call.service)
-        }
+        // 即发即忘（原版控制命令带回调超时，但 UI 从不等回执）：等待结果只会
+        // 占住 pending 表，卡片反馈靠 state_changed 回流。
+        ws.sendNow("call_service", message)
     }
 
     private fun uploadNavigateList(layout: com.example.astrion.panel.PanelLayout) {
