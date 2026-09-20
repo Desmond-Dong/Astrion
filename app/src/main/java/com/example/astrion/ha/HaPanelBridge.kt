@@ -114,7 +114,11 @@ class HaPanelBridge @Inject constructor(
     fun reconnect() {
         val ws = client ?: return
         ws.disconnect()
-        scope?.launch { ws.connect() }
+        scope?.launch {
+            // 留出旧 socket 完全关闭的时间，避免新旧握手消息串扰
+            delay(500)
+            ws.connect()
+        }
     }
 
     // ── Panel → HA (fire events) ────────────────────────────────────────
@@ -173,13 +177,16 @@ class HaPanelBridge @Inject constructor(
         haStatesStore.clear()
         val scope = this.scope ?: return
         // Subscriptions are per-connection: re-issue them on every connect.
+        // runCatching：单次失败不能杀死 state 收集器（否则后续重连无人处理）。
         jobs += scope.launch {
-            val ws = client ?: return@launch
-            SUBSCRIBED_EVENTS.forEach { type ->
-                ws.sendCommand("subscribe_events", buildJsonObject { put("event_type", type) })
-            }
-            submitPairData()
-            refreshLayout()
+            runCatching {
+                val ws = client ?: return@launch
+                SUBSCRIBED_EVENTS.forEach { type ->
+                    ws.sendCommand("subscribe_events", buildJsonObject { put("event_type", type) })
+                }
+                submitPairData()
+                refreshLayout()
+            }.onFailure { Timber.e(it, "onConnected flow failed (will retry on next reconnect)") }
         }
     }
 

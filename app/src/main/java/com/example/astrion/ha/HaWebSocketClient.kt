@@ -163,6 +163,7 @@ class HaWebSocketClient(
                 continue
             }
             _state.value = HaConnectionState.Connecting
+            Timber.i("HA connect attempt to %s:%d…", settings.host, settings.port)
             val authed = connectOnce(settings)
             if (!authed) {
                 webSocket?.cancel()
@@ -170,6 +171,7 @@ class HaWebSocketClient(
                 if (_state.value !is HaConnectionState.Error) {
                     _state.value = HaConnectionState.Error("连接失败")
                 }
+                Timber.i("HA connect failed; retrying in %dms", backoff)
                 delay(backoff)
                 backoff = (backoff * 2).coerceAtMost(30_000L)
                 continue
@@ -180,6 +182,7 @@ class HaWebSocketClient(
             webSocket?.cancel()
             webSocket = null
             if (running && scope.isActive) {
+                Timber.i("HA WebSocket closed; reconnecting in %dms", backoff)
                 _state.value = HaConnectionState.Disconnected
                 delay(backoff)
             }
