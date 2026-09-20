@@ -15,6 +15,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 
@@ -82,16 +83,30 @@ class PanelService : LifecycleService() {
         return PanelBinder(this)
     }
 
-    /** startForeground 带 300ms 重试：应用更新后的首次调用可能撞上
-     *  system_server 的 UidRecord 竞态（一次性 NPE）。 */
+    /**
+     * startForeground 兜底：应用更新后的首次调用可能撞上 system_server 的
+     * UidRecord 竞态（NPE，本设备实测单次 300ms 重试不够，新旧版本都崩过）。
+     * 立即试一次，失败转后台线程指数退避重试（总时长控制在前台服务 5 秒
+     * 窗口内）；全部失败才放弃，START_STICKY 会再次拉起服务。
+     */
     private fun startForegroundSafe(id: Int, notification: android.app.Notification) {
-        try {
-            startForeground(id, notification)
-        } catch (e: RuntimeException) {
-            runCatching { Thread.sleep(300) }
-            startForeground(id, notification)
+        if (tryStartForeground(id, notification)) return
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            var delayMs = 300L
+            repeat(5) { attempt ->
+                kotlinx.coroutines.delay(delayMs)
+                Timber.w("startForeground race (attempt %d), retrying", attempt + 1)
+                if (tryStartForeground(id, notification)) return@launch
+                delayMs = (delayMs * 2).coerceAtMost(1_000)
+            }
+            Timber.e("startForeground kept failing; giving up until the service is restarted")
         }
     }
+
+    private fun tryStartForeground(id: Int, notification: android.app.Notification): Boolean =
+        runCatching { startForeground(id, notification) }
+            .onFailure { Timber.w(it, "startForeground failed") }
+            .isSuccess
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Assert foreground synchronously on every start: some OEM app
