@@ -148,7 +148,7 @@ class HaPanelBridge @Inject constructor(
         // 状态导入聚合：200ms 窗口内的所有实体状态合并成一次写入/一次 UI 刷新
         // （原版对控制回写做节流/用户控制窗口，同思路）。
         jobs += scope.launch(kotlinx.coroutines.Dispatchers.Default) {
-            while (kotlinx.coroutines.isActive) {
+            while (isActive) {
                 delay(200)
                 if (pendingStates.isEmpty()) continue
                 val batch = buildList {
