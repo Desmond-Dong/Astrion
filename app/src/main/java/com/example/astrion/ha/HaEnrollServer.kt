@@ -80,6 +80,8 @@ class HaEnrollServer @Inject constructor(
                 request.method == "POST" && request.path.startsWith("/save") -> {
                     val saved = applyForm(parseForm(request.body))
                     writeResponse(sock, 200, if (saved) resultOkPage() else resultFailPage())
+                    // 保存成功 = 配对完成，服务自停（重配对时可再手动开启）
+                    if (saved) stop()
                 }
 
                 else -> writeResponse(sock, 404, notFoundPage())

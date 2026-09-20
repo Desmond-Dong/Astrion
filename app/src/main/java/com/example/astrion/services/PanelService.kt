@@ -133,6 +133,12 @@ class PanelService : LifecycleService() {
                 if (configured) enrollServer.stop() else enrollServer.start()
             }
         }
+        // 连接成功 = 配对完成，网页配对服务不再需要。
+        lifecycleScope.launch {
+            panelBridge.state.collect {
+                if (it == HaConnectionState.Connected) enrollServer.stop()
+            }
+        }
         // Stick around: the panel is a dedicated always-on appliance.
         return START_STICKY
     }
