@@ -280,8 +280,8 @@ fun PanelHomeScreen(
             } else {
                 HorizontalPager(
                     state = pagerState,
-                    // 预组相邻页：滑动开始前邻居页已就绪，消除滑动手势中的长帧
-                    beyondViewportPageCount = 1,
+                    // 全部房间页常驻组合：滑动零组合帧（原版 ViewPager 常驻思路）
+                    beyondViewportPageCount = 3,
                     modifier = Modifier.weight(1f)
                 ) { page ->
                     val room = rooms.getOrNull(page)
