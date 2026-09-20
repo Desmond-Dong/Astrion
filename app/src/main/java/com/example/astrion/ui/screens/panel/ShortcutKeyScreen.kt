@@ -93,10 +93,16 @@ class ShortcutKeysViewModel @Inject constructor(
         val binding = bindings.value[keycode] ?: return "未绑定"
         return when (binding.type) {
             "DeviceRoom" -> "房间 · ${binding.uuid}"
-            else -> layout.value.rooms.flatMap { it.cards }
-                .firstOrNull { it.cardId == binding.uuid }
-                ?.let { it.displayName(haStates.value) }
-                ?: binding.uuid
+            else -> {
+                val cards = layout.value.rooms.flatMap { it.cards }
+                // 优先 cardId 精确匹配；旧布局留下的过期 uuid 再按实体 ID 兜底
+                val card = cards.firstOrNull { it.cardId == binding.uuid }
+                    ?: cards.firstOrNull { c ->
+                        val entityId = c.primaryEntity?.entityId
+                        entityId != null && binding.uuid.contains(entityId)
+                    }
+                card?.displayName(haStates.value) ?: "已失效绑定"
+            }
         }
     }
 }
