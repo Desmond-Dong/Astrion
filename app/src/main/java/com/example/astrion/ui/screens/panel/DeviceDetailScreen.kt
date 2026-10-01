@@ -6,6 +6,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -184,47 +186,54 @@ private fun OptionPopup(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(onClick = onDismiss)
+    // 用 Dialog 渲染成独立窗口：调用点都在内容 Column 里，普通 Box 会被
+    // Column 堆叠到内容下方（屏幕外）而不是覆盖屏幕。
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-            color = RemoteColors.popupBackground,
+        Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .clickable(onClick = {})
+                .fillMaxSize()
+                .clickable(onClick = onDismiss)
         ) {
-            Column {
-                Text(
-                    text = title,
-                    color = RemoteColors.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp)
-                )
-                options.forEach { (value, label) ->
-                    val isSelected = value == selected
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(value) }
-                            .padding(horizontal = 20.dp, vertical = 14.dp)
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (isSelected) RemoteColors.accent else RemoteColors.onSurface,
-                            fontSize = 18.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (isSelected) {
-                            Text(text = "✓", color = RemoteColors.accent, fontSize = 18.sp)
+            Surface(
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                color = RemoteColors.popupBackground,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .clickable(onClick = {})
+            ) {
+                Column {
+                    Text(
+                        text = title,
+                        color = RemoteColors.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp)
+                    )
+                    options.forEach { (value, label) ->
+                        val isSelected = value == selected
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(value) }
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (isSelected) RemoteColors.accent else RemoteColors.onSurface,
+                                fontSize = 18.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Text(text = "✓", color = RemoteColors.accent, fontSize = 18.sp)
+                            }
                         }
                     }
+                    Spacer(Modifier.height(10.dp))
                 }
-                Spacer(Modifier.height(10.dp))
             }
         }
     }
