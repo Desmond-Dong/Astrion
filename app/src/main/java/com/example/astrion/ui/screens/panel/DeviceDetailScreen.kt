@@ -59,6 +59,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextAutoSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -996,7 +997,13 @@ private fun ClimateContent(
                         Row(verticalAlignment = Alignment.Top) {
                             Text(
                                 text = formatTemp(displayTemp),
-                                fontSize = 64.sp,
+                                // 原版 TemperatureValueTextView：自绘测量宽度自动
+                                // 缩字号（TEMP_TEXT_MIN/MAX_SP），永不换行
+                                autoSize = TextAutoSize.StepBased(
+                                    minFontSize = 30.sp, maxFontSize = 64.sp, stepSize = 2.sp
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
                                 fontWeight = FontWeight.Bold,
                                 color = RemoteColors.onSurface
                             )
@@ -1020,7 +1027,12 @@ private fun ClimateContent(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = currentTemp?.let { formatTemp(it) } ?: "--",
-                            fontSize = 56.sp,
+                            // 同原版：测量宽度自动缩字号，不换行
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 28.sp, maxFontSize = 56.sp, stepSize = 2.sp
+                            ),
+                            maxLines = 1,
+                            softWrap = false,
                             fontWeight = FontWeight.Bold,
                             color = RemoteColors.onSurface,
                             modifier = Modifier.height(95.dp)
@@ -1284,7 +1296,11 @@ private fun RangeTemperatureDialog(
                 )
                 Text(
                     text = formatTemp(value),
-                    fontSize = 55.sp,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 30.sp, maxFontSize = 55.sp, stepSize = 2.sp
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
                     fontWeight = FontWeight.Bold,
                     color = RemoteColors.onSurface,
                     textAlign = TextAlign.Center,
@@ -2645,7 +2661,11 @@ private fun WeatherContent(
             Row(verticalAlignment = Alignment.Top) {
                 Text(
                     text = temperature ?: "--",
-                    fontSize = 64.sp,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 30.sp, maxFontSize = 64.sp, stepSize = 2.sp
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
                     fontWeight = FontWeight.Bold,
                     color = RemoteColors.onSurface
                 )
