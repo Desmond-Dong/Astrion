@@ -540,6 +540,8 @@ private fun RoomDeviceList(
                             card = card,
                             name = card.displayName(haStates),
                             stateText = cardStateText(card, haStates),
+                            isBlind = card.primaryEntity?.entityId
+                                ?.let { haStates["$it.current_tilt_position"] != null } == true,
                             emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
                                 card.primaryEntity?.entityId
                                     ?.let { haStates[it]?.state }
@@ -562,16 +564,19 @@ private fun DeviceCard(
     card: PanelCard,
     name: String,
     stateText: String,
+    isBlind: Boolean = false,
     emoji: String? = null,
     onClick: () -> Unit,
 ) {
     // 原版 index_device_*_item：无卡片盒子，居中 50dp 原版彩色状态图标
     // (alpha 0.8) + 下方 #BFBDBD 名称 + 左侧 4dp 白点表示开机。
     // 天气卡片用 emoji 实况图标替代图标位，状态行显示 温度·天气。
+    // 百叶窗（cover 带 current_tilt_position）用原版 blind 专属图标；
+    // 卡片可配 hide_name/hide_icon 隐藏名称/图标（原版 list_elements）。
     val isOn = stateText.contains("开启") || stateText.contains("打开") ||
         stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
     val isOffline = stateText.contains("不可用") || stateText.contains("unavailable")
-    val iconRes = stateIconRes(card.resolvedType, isOn)
+    val iconRes = stateIconRes(card.resolvedType, isOn, isBlind)
 
     Box(
         modifier = Modifier
@@ -583,34 +588,38 @@ private fun DeviceCard(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (emoji != null) {
-                Text(
-                    text = emoji,
-                    fontSize = 44.sp,
-                    modifier = Modifier.height(56.dp)
-                )
-                Spacer(Modifier.height(6.dp))
-            } else {
-                Icon(
-                    painter = painterResource(iconRes),
-                    contentDescription = card.resolvedType,
-                    tint = Color.Unspecified,
-                    modifier = Modifier
-                        .size(50.dp)
-                        .alpha(0.8f)
-                )
-                Spacer(Modifier.height(6.dp))
+            if (!card.hideIcon) {
+                if (emoji != null) {
+                    Text(
+                        text = emoji,
+                        fontSize = 44.sp,
+                        modifier = Modifier.height(56.dp)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                } else {
+                    Icon(
+                        painter = painterResource(iconRes),
+                        contentDescription = card.resolvedType,
+                        tint = Color.Unspecified,
+                        modifier = Modifier
+                            .size(50.dp)
+                            .alpha(0.8f)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
             }
-            Text(
-                text = name,
-                color = Color(0xFFBFBDBD),
-                fontSize = 16.sp,
-                lineHeight = 20.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.height(40.dp)
-            )
+            if (!card.hideName) {
+                Text(
+                    text = name,
+                    color = Color(0xFFBFBDBD),
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.height(40.dp)
+                )
+            }
             if (card.resolvedType == PanelCardTypes.WEATHER && !isOffline) {
                 Text(
                     text = stateText,
@@ -653,12 +662,16 @@ private fun DeviceCard(
     }
 }
 
-/** 原版两态图标：开=彩色 on 图标，关=灰色 off 图标。 */
-private fun stateIconRes(type: String, isOn: Boolean): Int {
+/** 原版两态图标：开=彩色 on 图标，关=灰色 off 图标。
+ *  百叶窗（原版 curtain_interface_type=blind）有专属图标，这里以
+ *  cover 实体带 current_tilt_position 属性识别。 */
+private fun stateIconRes(type: String, isOn: Boolean, isBlind: Boolean = false): Int {
     val pair = when (type) {
         PanelCardTypes.LIGHT -> R.drawable.ic_state_light_on to R.drawable.ic_state_light_off
         PanelCardTypes.CLIMATE -> R.drawable.ic_state_climate_on to R.drawable.ic_state_climate_off
-        PanelCardTypes.COVER -> R.drawable.ic_state_cover_on to R.drawable.ic_state_cover_off
+        PanelCardTypes.COVER ->
+            if (isBlind) R.drawable.ic_state_blind_on to R.drawable.ic_state_blind_off
+            else R.drawable.ic_state_cover_on to R.drawable.ic_state_cover_off
         PanelCardTypes.FAN -> R.drawable.ic_state_fan_on to R.drawable.ic_state_fan_off
         PanelCardTypes.MEDIA_PLAYER -> R.drawable.ic_state_media_on to R.drawable.ic_state_media_off
         PanelCardTypes.SWITCH -> R.drawable.ic_state_switch_on to R.drawable.ic_state_switch_off

@@ -268,6 +268,7 @@ class DeviceDetailViewModel @Inject constructor(
     private val cardController: CardController,
     private val keyRouter: KeyRouter,
     private val panelBridge: com.example.astrion.ha.HaPanelBridge,
+    val acModePrefs: com.example.astrion.panel.AcModePrefs,
 ) : ViewModel() {
     private val route = savedStateHandle.toRoute<DeviceDetail>()
 
@@ -436,7 +437,7 @@ fun DeviceDetailScreen(
     ) {
         when (current?.resolvedType) {
             PanelCardTypes.TV -> TvRemoteContent(current, haStates, viewModel, onExit = { navController.popBackStack() })
-            PanelCardTypes.CLIMATE -> ClimateContent(current, haStates, viewModel)
+            PanelCardTypes.CLIMATE -> ClimateContent(current, haStates, viewModel, viewModel.acModePrefs)
             PanelCardTypes.LIGHT -> LightContent(current, haStates, viewModel)
             PanelCardTypes.FAN -> FanContent(current, haStates, viewModel)
             PanelCardTypes.COVER -> CoverContent(current, haStates, viewModel)
@@ -890,7 +891,9 @@ private fun ClimateContent(
     card: PanelCard,
     haStates: Map<String, HaEntityState>,
     viewModel: DeviceDetailViewModel,
+    acModePrefs: com.example.astrion.panel.AcModePrefs,
 ) {
+    val entityId = card.primaryEntity?.entityId ?: ""
     val state = stateOf(card, haStates) ?: "unavailable"
     val isRange = state == "heat_cool"
     val available = state != "unavailable"
@@ -918,9 +921,14 @@ private fun ClimateContent(
         }
     }
 
-    // 原版电源记忆逻辑：非关机状态缓存模式，开机时恢复
-    var cachedMode by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state) { if (isOn) cachedMode = state }
+    // 原版电源记忆逻辑：非关机状态缓存模式到 AcModePrefs（跨重启持久，
+    // 与物理键电源共用），开机时恢复并校验仍在支持列表内
+    val cachedMode = remember(acModePrefs, entityId) { acModePrefs.getCachedMode(entityId) }
+    LaunchedEffect(state) {
+        if (isOn && state != "off" && state != "unavailable") {
+            acModePrefs.setCachedMode(entityId, state)
+        }
+    }
 
     var showModePopup by remember { mutableStateOf(false) }
     var showFanPopup by remember { mutableStateOf(false) }
@@ -1090,7 +1098,8 @@ private fun ClimateContent(
             options = hvacModes.map { it to acModeLabel(it) },
             selected = state,
             onSelect = { mode ->
-                cachedMode = mode // 原版：选择模式同时更新 cachedMode
+                // 原版：选择模式同时更新 AcModePrefs 记忆
+                acModePrefs.setCachedMode(entityId, mode)
                 viewModel.setHvacMode(mode)
                 showModePopup = false
             },

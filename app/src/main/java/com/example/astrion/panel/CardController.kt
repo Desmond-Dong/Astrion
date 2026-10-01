@@ -18,6 +18,7 @@ class CardController @Inject constructor(
     private val irController: PanelIrController,
     private val haStatesStore: HomeAssistantStatesStore,
     private val eventHub: PanelEventHub,
+    private val acModePrefs: AcModePrefs,
 ) {
     // ── TV remote keys ──────────────────────────────────────────────────
 
@@ -62,10 +63,13 @@ class CardController @Inject constructor(
         if (ref.entityId.isNotBlank()) {
             haActionBus.callService(
                 "remote.send_command",
-                mapOf(
-                    "entity_id" to ref.entityId,
-                    "command" to ref.effectiveCommand
-                )
+                buildMap {
+                    put("entity_id", ref.entityId)
+                    put("command", ref.effectiveCommand)
+                    // 原版 TvControlItem.harmony_device：按键绑定了网关设备时
+                    // 附带 device 参数，由 Harmony/万能遥控实体路由命令
+                    if (ref.device.isNotBlank()) put("device", ref.device)
+                }
             )
         }
     }
@@ -347,7 +351,21 @@ class CardController @Inject constructor(
                     132 -> {
                         if (large) false
                         else {
-                            climateSetHvacMode(entityId, if (state != "off") "off" else "cool"); true
+                            // 原版 AcControlView：关机前把当前模式存入 AcModePrefs，
+                            // 开机恢复缓存的模式（恢复时校验仍在支持列表内）
+                            if (state != "off" && state != "unavailable") {
+                                acModePrefs.setCachedMode(entityId, state)
+                                climateSetHvacMode(entityId, "off")
+                            } else {
+                                val supported = haStatesStore.states.value["$entityId.hvac_modes"]
+                                    ?.state?.split(',')?.map { it.trim() }?.filter { it.isNotBlank() }
+                                    .orEmpty()
+                                val resume = acModePrefs.getCachedMode(entityId)
+                                    ?.takeIf { it != "off" && (supported.isEmpty() || it in supported) }
+                                    ?: "cool"
+                                climateSetHvacMode(entityId, resume)
+                            }
+                            true
                         }
                     }
 
@@ -472,10 +490,12 @@ class CardController @Inject constructor(
     /** Steps through the reported fan mode list of the climate entity. */
     private suspend fun cycleClimateFanMode(entityId: String) {
         val current = haStatesStore.states.value["$entityId.fan_mode"]?.state ?: return
-        // The attribute list is unavailable without subscribing to the
-        // `fan_modes` attribute; document a `fan_modes` sync entry for full
-        // support. Cycle a sensible default order when unknown.
-        val modes = listOf("auto", "low", "medium", "high")
+        // 原版兼容层：风扇档位用设备上报的原始 fan_modes 清单循环（任意
+        // 取值透传），属性未同步时退回一组常见档位。
+        val modes = haStatesStore.states.value["$entityId.fan_modes"]?.state
+            ?.split(',')?.map { it.trim() }?.filter { it.isNotBlank() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf("auto", "low", "medium", "high")
         val next = modes[(modes.indexOf(current) + 1).mod(modes.size)]
         climateSetFanMode(entityId, next)
     }

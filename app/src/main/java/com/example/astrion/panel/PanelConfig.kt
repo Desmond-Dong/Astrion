@@ -158,6 +158,10 @@ data class PanelCard(
     val icon: String = "",
     /** Percentage step for fan cards (§3.10.4 ④: getPercentageStep). */
     @SerialName("percentage_step") val percentageStep: Int = 0,
+    /** 原版 TvCardAttributes list_elements.device_name：首页卡片隐藏名称。 */
+    @SerialName("hide_name") val hideName: Boolean = false,
+    /** 原版 TvCardAttributes list_elements.icon：首页卡片隐藏图标。 */
+    @SerialName("hide_icon") val hideIcon: Boolean = false,
     val entities: List<PanelEntityRef> = emptyList(),
 ) {
     /**
@@ -203,6 +207,11 @@ data class PanelEntityRef(
     val value: String = "",
     val alias: String = "",
     val domain: String = "",
+    /**
+     * 原版 TvControlItem.harmony_device：遥控类按键经 `remote.send_command`
+     * 发送时附带 `device` 参数（Harmony/万能遥控网关按设备路由命令）。
+     */
+    val device: String = "",
 ) {
     val entityDomain: String
         get() = domain.ifBlank { entityId.substringBefore('.') }

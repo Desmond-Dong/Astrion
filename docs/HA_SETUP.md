@@ -69,6 +69,17 @@ HA → 设置 → 设备与服务 → **Astrion Remote** → 添加：
 HA 侧主动发码：调用 `astrion.send_command`（`entity_id: remote.xxx`、
 `button: 电源` 或原生长码），事件 `astrion/control_command` 会下发到面板发射。
 
+**空调按键**：物理键 92/93 循环风速按实体上报的 `fan_modes` 清单循环（任意
+取值透传，不再限于 auto/low/medium/high）；物理键电源与详情页电源共用
+模式记忆——关机时记住当前模式，再开机恢复（校验仍在 `hvac_modes` 内）。
+
+**TV 按键绑定网关设备**（Harmony 类）：布局里按键可带 `device` 字段，
+`remote.send_command` 会附带 `device` 参数由网关按设备路由：
+
+```json
+{"key": "POWER", "entity_id": "remote.harmony", "value": "PowerOn", "device": "客厅电视"}
+```
+
 ---
 
 ## 4. 导航与自动化
