@@ -354,7 +354,7 @@ class CardController @Inject constructor(
                             // 原版 AcControlView：关机前把当前模式存入 AcModePrefs，
                             // 开机恢复缓存的模式（恢复时校验仍在支持列表内）
                             if (state != "off" && state != "unavailable") {
-                                acModePrefs.setCachedMode(entityId, state)
+                                state?.let { acModePrefs.setCachedMode(entityId, it) }
                                 climateSetHvacMode(entityId, "off")
                             } else {
                                 val supported = haStatesStore.states.value["$entityId.hvac_modes"]
