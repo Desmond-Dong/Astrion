@@ -1983,16 +1983,24 @@ private fun FanContent(
         }
     }
 
-    // 电源 300ms 防抖（原版 mSwitchDebounceRunnable）
+    // 电源：乐观翻面 + 替换式 300ms 防抖（原版 ImageSwitchView 立即翻面 +
+    // mSwitchDebounceRunnable 连点最后一击胜出）
+    var powerOverride by remember { mutableStateOf<Boolean?>(null) }
     var powerJob by remember { mutableStateOf<Job?>(null) }
     fun requestPower(on: Boolean) {
-        if (powerJob?.isActive == true) return
+        powerOverride = on
+        powerJob?.cancel()
         powerJob = scope.launch {
             delay(300)
             powerJob = null
             if (on) viewModel.turnOn() else viewModel.turnOff()
         }
     }
+    // HA 回显在防抖窗口后生效，覆盖失效
+    LaunchedEffect(state) {
+        if (powerJob?.isActive != true) powerOverride = null
+    }
+    val powerShown = powerOverride ?: isOn
 
     // 原版 updateBtnPowerUI：alpha 500ms 动画 1.0/0.5（首次 0ms 由初始值承担）
     val listAlpha by animateFloatAsState(
@@ -2001,9 +2009,15 @@ private fun FanContent(
         label = "fanListAlpha"
     )
 
-    // 原版 updateSpeedIconUI：百分比与档位值完全相等才高亮
-    val selectedLevel = pendingLevel
-        ?: percentage?.toInt()?.let { cur -> levels.firstOrNull { it == cur } }
+    // 原版 Fan.speedSetting：显示百分比按步进向上吸附（ceil(pct/step)×step）
+    // 后再匹配档位，45% → 高亮 60 档
+    val selectedLevel = pendingLevel ?: run {
+        val snapped = percentage?.let { pct ->
+            val level = kotlin.math.ceil(pct / step).toInt().coerceIn(1, levelCount)
+            minOf((level * step).toInt(), 100)
+        }
+        levels.firstOrNull { it == snapped }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -2011,7 +2025,7 @@ private fun FanContent(
     ) {
         // 原版 imgSwitchView：60×60dp 电源开关，marginTop 10
         DevicePowerSwitch(
-            isOn = isOn,
+            isOn = powerShown,
             onRes = R.drawable.ic_state_fan_on,
             offRes = R.drawable.ic_state_fan_off,
             onToggle = { requestPower(it) }
@@ -2796,7 +2810,7 @@ private fun WeatherContent(
     val entityId = card.primaryEntity?.entityId
     val condition = stateOf(card, haStates) ?: "--"
     val unit = stateOf(card, haStates, "temperature_unit") ?: "°C"
-    val temperature = stateOf(card, haStates, "temperature")?.trim()?.removeSuffix(".0")
+    val temperature = stateOf(card, haStates, "temperature")?.toDoubleOrNull()?.let { "%.0f".format(it) }
     val humidity = stateOf(card, haStates, "humidity")
     val windSpeed = stateOf(card, haStates, "wind_speed")
     val windSpeedUnit = stateOf(card, haStates, "wind_speed_unit") ?: "km/h"

@@ -89,6 +89,7 @@ class PanelViewModel @Inject constructor(
     private val panelBridge: HaPanelBridge,
     private val displaySettingsStore: com.example.astrion.settings.DisplaySettingsStore,
     private val screenOffController: com.example.astrion.services.ScreenOffController,
+    private val cardController: com.example.astrion.panel.CardController,
 ) : ViewModel() {
     val layout = panelConfigStore.layout
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PanelLayout())
@@ -118,6 +119,41 @@ class PanelViewModel @Inject constructor(
     fun refreshDevices() = panelBridge.reconnect()
 
     fun screenOff() = screenOffController.turnScreenOffNow()
+
+    /** 原版"点卡即控"范式：风扇/开关点卡直接切换电源，场景点卡执行（SceneItem/
+     *  FanItem/SwitchItem 的 onClick 均 sendCommand，详情是次要入口）。 */
+    fun toggleCardPower(card: PanelCard) {
+        viewModelScope.launch {
+            cardController.handleDeviceKey(card, 132, longPress = false)
+        }
+    }
+
+    /** 场景点卡执行（原版 executeByMode 缺省 immediate）。成功后回调 UI 反馈。 */
+    fun executeScene(card: PanelCard, onExecuted: () -> Unit) {
+        viewModelScope.launch {
+            cardController.turnOn(card.primaryEntity?.entityId ?: return@launch)
+            onExecuted()
+        }
+    }
+
+    /** 原版监控开关卡全关（keyOpenALLCloseSelectList）：对一类设备逐个发关闭。 */
+    fun allOff(monitor: PanelCard, type: String) {
+        // 监控卡所在布局中的同类设备（简化：全布局同类）
+        val entities = layout.value.rooms.flatMap { it.cards }
+            .filter { it.resolvedType == type }
+            .mapNotNull { it.primaryEntity?.entityId }
+        viewModelScope.launch {
+            entities.forEach { entityId ->
+                when (type) {
+                    PanelCardTypes.CLIMATE ->
+                        cardController.climateSetHvacMode(entityId, "off")
+                    else ->
+                        cardController.turnOff(entityId)
+                }
+                delay(100) // 原版 100ms/台 间隔发送
+            }
+        }
+    }
 }
 
 /** Per-type accent pair for the icon gradient (reserved for editor previews). */
@@ -191,7 +227,7 @@ fun cardStateText(card: PanelCard, states: Map<String, com.example.astrion.servi
             if (state == "unavailable") return "不可用"
             val unit = states["${primary.entityId}.temperature_unit"]?.state ?: "°C"
             val temp = states["${primary.entityId}.temperature"]?.state
-                ?.trim()?.removeSuffix(".0")
+                ?.toDoubleOrNull()?.let { "%.0f".format(it) }
             return listOfNotNull(temp?.let { "$it$unit" }, weatherLabel(state))
                 .joinToString(" · ")
         }
@@ -260,6 +296,7 @@ fun PanelHomeScreen(
                     cards = allCards,
                     haStates = haStates,
                     onOpenCard = { card -> navController.navigate(DeviceDetail(card.cardId)) },
+                    onAllOff = { card, type -> viewModel.allOff(card, type) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -428,16 +465,31 @@ private fun HomeTitleBar() {
     }
 }
 
-/** 原版双列设备卡片网格：类型专属彩色渐变图标 + 名称 + 状态点。 */
+/** 原版设备列表：单列纵向（LinearLayoutManager 15dp 间距/边距）。 */
 @Composable
 private fun RoomDeviceList(
     cards: List<PanelCard>,
     haStates: Map<String, com.example.astrion.services.HaEntityState>,
     onOpenCard: (PanelCard) -> Unit,
+    onAllOff: (PanelCard, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     // 容错: duplicate keys would crash the grid - keep the first of any dupes
     val uniqueCards = remember(cards) { cards.distinctBy { it.cardId } }
+    // 原版监控开关卡：空调/灯/开关 三分区计数（StatisticsDevice isShow* 分区）
+    var monitorTarget by remember { mutableStateOf<PanelCard?>(null) }
+    if (monitorTarget != null) {
+        AllOffDialog(
+            monitor = monitorTarget!!,
+            cards = uniqueCards,
+            haStates = haStates,
+            onAllOff = { category ->
+                onAllOff(monitorTarget!!, category)
+                monitorTarget = null
+            },
+            onDismiss = { monitorTarget = null }
+        )
+    }
     if (cards.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -469,7 +521,7 @@ private fun RoomDeviceList(
                 PanelCardTypes.CLIMATE -> {
                     val temp = entityId
                         ?.let { haStates["$it.temperature"]?.state }
-                        ?.trim()?.removeSuffix(".0")
+                        ?.toDoubleOrNull()?.let { "%.0f".format(it) }
                     val mode = entityId
                         ?.let { haStates[it]?.state }
                         ?.let { acModeLabel(it) }
@@ -485,15 +537,43 @@ private fun RoomDeviceList(
                     ?.let { haStates["$it.volume_level"]?.state?.toFloatOrNull() }
                     ?.let { "音量 ${((it * 100).toInt().coerceIn(0, 100))}%" }
 
+                // 原版监控开关卡三分区计数（StatisticsDevice isShowAc/Light/Switch）
+                PanelCardTypes.SWITCH_MONITOR -> {
+                    fun onCount(type: String) = uniqueCards.count {
+                        it.resolvedType == type && it.primaryEntity?.entityId
+                            ?.let { id -> haStates[id]?.state } == "on"
+                    }
+                    listOf(
+                        "空调 ${onCount(PanelCardTypes.CLIMATE)}",
+                        "灯 ${onCount(PanelCardTypes.LIGHT)}",
+                        "开关 ${onCount(PanelCardTypes.SWITCH)}"
+                    ).joinToString("  ")
+                }
+
                 else -> null
+            }
+            // 原版"点卡即控"：风扇/开关点卡切换电源、场景点卡执行（均无详情页
+            // 或详情为次要入口，⋮/右侧热区才是进详情）；其它类型点卡进详情
+            val directControl = card.resolvedType in setOf(
+                PanelCardTypes.FAN, PanelCardTypes.SWITCH, PanelCardTypes.SCENE
+            )
+            var sceneExecuted by remember(card.cardId) { mutableStateOf(false) }
+            // 原版 cSExecute 成功动画 2s 后隐藏
+            LaunchedEffect(sceneExecuted) {
+                if (sceneExecuted) {
+                    delay(2000)
+                    sceneExecuted = false
+                }
             }
             DeviceCard(
                 card = card,
                 name = card.displayName(haStates),
                 stateText = cardStateText(card, haStates),
+                primaryState = entityId?.let { haStates[it]?.state } ?: "",
                 bottomInfo = bottomInfo,
                 isBlind = card.primaryEntity?.entityId
                     ?.let { haStates["$it.current_tilt_position"] != null } == true,
+                sceneExecuted = sceneExecuted,
                 emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
                     card.primaryEntity?.entityId
                         ?.let { haStates[it]?.state }
@@ -501,10 +581,86 @@ private fun RoomDeviceList(
                 } else {
                     null
                 },
-                onClick = { onOpenCard(card) }
+                onClick = {
+                    when {
+                        // 原版 MonitorSwitchItem：点击弹全关选择（灯/开关/空调）
+                        card.resolvedType == PanelCardTypes.SWITCH_MONITOR ->
+                            monitorTarget = card
+
+                        card.resolvedType == PanelCardTypes.FAN ||
+                            card.resolvedType == PanelCardTypes.SWITCH ->
+                            viewModel.toggleCardPower(card)
+
+                        card.resolvedType == PanelCardTypes.SCENE ->
+                            viewModel.executeScene(card) {
+                                sceneExecuted = true // 原版 cSExecute 成功动画 2s
+                            }
+
+                        else -> onOpenCard(card)
+                    }
+                },
+                onDotsClick = if (directControl) {
+                    { onOpenCard(card) } // 原版 viewEnterDetail/⋮ 进详情
+                } else {
+                    null
+                }
             )
         }
     }
+}
+
+/**
+ * 原版 MonitorSwitchItem 的全关选择弹窗（keyOpenALLCloseSelectList +
+ * CustomListDialog）：选灯/开关/空调 全关，对该类所有设备逐个发关闭命令。
+ */
+@Composable
+private fun AllOffDialog(
+    monitor: PanelCard,
+    cards: List<PanelCard>,
+    haStates: Map<String, com.example.astrion.services.HaEntityState>,
+    onAllOff: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // 各类别在当前布局中的设备（点击发全关）
+    fun entitiesOf(type: String) = cards.filter { it.resolvedType == type }
+        .mapNotNull { it.primaryEntity?.entityId }
+    val options = buildList {
+        if (entitiesOf(PanelCardTypes.LIGHT).isNotEmpty())
+            add("灯全部关闭" to PanelCardTypes.LIGHT)
+        if (entitiesOf(PanelCardTypes.SWITCH).isNotEmpty())
+            add("开关全部关闭" to PanelCardTypes.SWITCH)
+        if (entitiesOf(PanelCardTypes.CLIMATE).isNotEmpty())
+            add("空调全部关闭" to PanelCardTypes.CLIMATE)
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        containerColor = RemoteColors.popupBackground,
+        title = { Text(monitor.displayName(haStates), color = RemoteColors.onSurface, fontSize = 18.sp) },
+        text = {
+            Column {
+                options.forEachIndexed { index, (label, type) ->
+                    Text(
+                        text = label,
+                        color = RemoteColors.onSurface,
+                        fontSize = 18.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onAllOff(type) }
+                            .padding(vertical = 14.dp)
+                    )
+                    if (index < options.lastIndex) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(RemoteColors.popupLine)
+                        )
+                    }
+                }
+            }
+        }
+    )
 }
 
 /** 空调模式中文标签（原版 HvacAndPresetMode.getLanguageString 简表）。 */
@@ -524,21 +680,32 @@ private fun DeviceCard(
     card: PanelCard,
     name: String,
     stateText: String,
+    primaryState: String,
     bottomInfo: String? = null,
     isBlind: Boolean = false,
+    sceneExecuted: Boolean = false,
     emoji: String? = null,
     onClick: () -> Unit,
+    onDotsClick: (() -> Unit)? = null,
 ) {
     // 原版 index_device_*_item：无卡片盒子，居中 50dp 原版彩色状态图标
     // (alpha 0.8) + 下方 #BFBDBD 名称 + 左侧 4dp 白点表示开机 + 右上竖三点
     // 信息入口 + 底部信息行（AC 温度/模式、灯光亮度%、音乐音量%）。
+    // 白点仅开机状态可见的类型有（开关/场景/天气卡原版恒不显示）；
+    // ⋮ 仅可进详情的类型显示（SwitchItem 显式 GONE、场景无 viewEnterDetail）。
     // 天气卡片用 emoji 实况图标替代图标位，状态行显示 温度·天气。
     // 百叶窗（cover 带 current_tilt_position）用原版 blind 专属图标；
     // 卡片可配 hide_name/hide_icon 隐藏名称/图标（原版 list_elements）。
-    val isOn = stateText.contains("开启") || stateText.contains("打开") ||
-        stateText.contains("播放") || card.resolvedType == PanelCardTypes.SCENE
+    val isOn = primaryState == "on" || primaryState == "open" || primaryState == "playing" ||
+        primaryState == "heat" || primaryState == "cool" || primaryState == "auto" ||
+        primaryState == "dry" || primaryState == "fan_only" || primaryState == "heat_cool"
     val isOffline = stateText.contains("不可用") || stateText.contains("unavailable")
     val iconRes = stateIconRes(card.resolvedType, isOn, isBlind)
+    // 原版有开机白点的卡片类型
+    val showDot = isOn && card.resolvedType in setOf(
+        PanelCardTypes.CLIMATE, PanelCardTypes.LIGHT, PanelCardTypes.COVER,
+        PanelCardTypes.FAN, PanelCardTypes.TV, PanelCardTypes.MEDIA_PLAYER
+    )
 
     Box(
         modifier = Modifier
@@ -599,7 +766,7 @@ private fun DeviceCard(
                 )
             }
         }
-        if (isOn) {
+        if (showDot) {
             Box(
                 modifier = Modifier
                     .size(4.dp)
@@ -608,15 +775,32 @@ private fun DeviceCard(
                     .background(Color.White, CircleShape)
             )
         }
-        // 原版右上角竖三点信息入口（incDeviceDetail：marginTop 5 / marginEnd 8）
-        Text(
-            text = "⋮",
-            color = Color(0xFFBFBDBD),
-            fontSize = 20.sp,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 5.dp, end = 8.dp)
-        )
+        // 原版右上角竖三点信息入口（incDeviceDetail：marginTop 5 / marginEnd 8）；
+        // 开关/场景卡原版无此入口（SwitchItem GONE、场景无详情），点卡即控的
+        // 风扇/开关 ⋮ 是进详情的热区
+        if (onDotsClick != null) {
+            Text(
+                text = "⋮",
+                color = Color(0xFFBFBDBD),
+                fontSize = 20.sp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 5.dp, end = 8.dp)
+                    .clickable(onClick = onDotsClick)
+            )
+        }
+        // 原版场景卡 cSExecute：右上 35dp 成功态动画 2s（此处简化为对勾角标）
+        if (sceneExecuted) {
+            Text(
+                text = "✓",
+                color = Color(0xFF27D343),
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 10.dp)
+            )
+        }
         if (bottomInfo != null && !isOffline) {
             // 原版底部信息行：30dp 高、marginBottom 8 / marginEnd 15、10sp
             Text(

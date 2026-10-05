@@ -1,6 +1,7 @@
 package com.example.astrion.ui.screens.panel
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.provider.Settings
 import kotlin.math.roundToInt
@@ -161,9 +162,14 @@ fun QuickSettingsPanel(
             )
             Spacer(Modifier.height(10.dp))
 
-            // 网络（原版 llWifiButton：WiFi 状态 + IP）
+            // 网络（原版 llWifiButton：WiFi 状态 + IP；点击跳系统 WiFi 设置）
             val ip = remember { getLocalIpAddress() ?: "" }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    context.startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                }
+            ) {
                 Text("网络", color = RemoteColors.onSurface, fontSize = 14.sp)
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -174,11 +180,14 @@ fun QuickSettingsPanel(
             }
             Spacer(Modifier.height(10.dp))
 
-            // 刷新设备（原版 rlRefreshDevice：重连 HA 重拉实体）
+            // 刷新设备（原版 rlRefreshDevice：重连 HA 重拉实体，随后收起面板）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onRefreshDevices)
+                    .clickable {
+                        onRefreshDevices()
+                        onDismiss()
+                    }
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

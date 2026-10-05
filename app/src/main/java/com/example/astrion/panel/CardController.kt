@@ -421,26 +421,32 @@ class CardController @Inject constructor(
             PanelCardTypes.FAN -> {
                 val percentage = haStatesStore.states.value["$entityId.percentage"]
                     ?.state?.toFloatOrNull()
+                // 原版 dispatchKeyEvent：24/25 仅 isOn 且支持百分比时生效（UP
+                // 单发、无连发）；132=电源翻转
+                val fire = !large || repeat == 0
                 when (keyCode) {
                     24, 25 -> {
-                        // 原版 adjustFanSpeedByKey：按 percentage_step 档位上下移动
-                        // （步进默认 20 → 最多 5 档），到边界忽略按键
-                        val step = haStatesStore.states.value["$entityId.percentage_step"]
-                            ?.state?.toFloatOrNull()?.takeIf { it > 0f } ?: 20f
-                        val count = (100f / step).toInt().coerceIn(1, 5)
-                        val levels = (1..count).map { (it * step).toInt().coerceAtMost(100) }
-                        val current = percentage ?: 0f
-                        val idx = levels.withIndex()
-                            .minByOrNull { kotlin.math.abs(it.value - current) }?.index ?: 0
-                        val nextIdx = idx + if (keyCode == 24) 1 else -1
-                        if (nextIdx in levels.indices) {
-                            fanSetPercentage(entityId, levels[nextIdx])
+                        if (state != "on" || percentage == null) {
+                            true // 关机或不支持：消费但不动作
+                        } else {
+                            if (fire) {
+                                val step = haStatesStore.states.value["$entityId.percentage_step"]
+                                    ?.state?.toFloatOrNull()?.takeIf { it > 0f } ?: 20f
+                                val count = (100f / step).toInt().coerceIn(1, 5)
+                                val levels = (1..count).map { (it * step).toInt().coerceAtMost(100) }
+                                val idx = levels.withIndex()
+                                    .minByOrNull { kotlin.math.abs(it.value - percentage) }?.index ?: 0
+                                val nextIdx = idx + if (keyCode == 24) 1 else -1
+                                if (nextIdx in levels.indices) {
+                                    fanSetPercentage(entityId, levels[nextIdx])
+                                }
+                            }
+                            true
                         }
-                        true
                     }
 
                     132 -> {
-                        if (large) false
+                        if (!fire) true
                         else {
                             if (state == "on") turnOff(entityId) else turnOn(entityId); true
                         }
