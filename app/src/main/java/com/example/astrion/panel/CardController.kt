@@ -293,7 +293,8 @@ class CardController @Inject constructor(
     private suspend fun applyDeviceStep(card: PanelCard, keyCode: Int, large: Boolean): Boolean {
         val entityId = card.primaryEntity?.entityId ?: return false
         val state = haStatesStore.states.value[entityId]?.state
-        return when (card.type) {
+        // resolvedType（含 domain 推断）：集成生成的布局卡片可以不带 type 字段
+        return when (card.resolvedType) {
             PanelCardTypes.TV -> {
                 // 原版 TV 键：音量→media_player；频道→send_command；OK 等单键
                 when (keyCode) {
