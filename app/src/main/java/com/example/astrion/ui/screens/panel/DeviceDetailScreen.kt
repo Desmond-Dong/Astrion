@@ -65,6 +65,7 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -318,9 +319,12 @@ class DeviceDetailViewModel @Inject constructor(
     private fun startHold(card: PanelCard, keyCode: Int) {
         holdJob?.cancel()
         holdJob = viewModelScope.launch {
+            // 原版长按步进累加（空调温度等）：repeat 为重复序号，从 1 开始
+            var repeat = 1
             while (isActive) {
-                cardController.holdDeviceStep(card, keyCode)
+                cardController.holdDeviceStep(card, keyCode, repeat)
                 delay(HOLD_REPEAT_MS)
+                repeat++
             }
         }
     }
@@ -441,9 +445,12 @@ fun DeviceDetailScreen(
     val haStates by viewModel.haStates.collectAsStateWithLifecycle()
 
     val current = card
+    // 原版窗帘页 TitleBar 无 30dp 顶距，其余设备页有
+    val topMargin = if (current?.resolvedType == PanelCardTypes.COVER) 0.dp else 30.dp
     DetailScaffold(
         title = current?.displayName(haStates) ?: "",
-        onBack = { navController.popBackStack() }
+        onBack = { navController.popBackStack() },
+        topMargin = topMargin
     ) {
         when (current?.resolvedType) {
             PanelCardTypes.TV -> TvRemoteContent(current, haStates, viewModel, onExit = { navController.popBackStack() })
@@ -465,18 +472,21 @@ fun DeviceDetailScreen(
 private fun DetailScaffold(
     title: String,
     onBack: () -> Unit,
+    topMargin: Dp = 30.dp, // 原版 TitleBar marginTop 30（窗帘页 0）
     content: @Composable () -> Unit,
 ) {
+    // 原版设备页为全幅 RelativeLayout（无全局水平边距），标题栏高 50dp、
+    // 标题 20dp 白；底部另有 50dp BackBar（返回箭头 90×30）
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(RemoteBackground)
-            .padding(horizontal = 20.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp),
+                .padding(top = topMargin)
+                .height(50.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
@@ -489,14 +499,32 @@ private fun DetailScaffold(
             Spacer(Modifier.width(8.dp))
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = RemoteColors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        content()
+        Box(modifier = Modifier.weight(1f)) {
+            content()
+        }
+        // 原版底部 BackBar：50dp 返回条
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .clickable(onClick = onBack),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(Modifier.width(10.dp))
+            Icon(
+                painter = painterResource(R.drawable.arrow_back_24px),
+                contentDescription = "返回",
+                tint = RemoteColors.onSurface,
+                modifier = Modifier.size(width = 45.dp, height = 15.dp)
+            )
+        }
     }
 }
 
@@ -642,11 +670,12 @@ private fun TvRemoteContent(
             overflow = TextOverflow.Ellipsis
         )
 
-        // 原版 llPower：75×75dp 圆形电源按钮 + 40dp 图标
+        // 原版 llPower：75×75dp 圆形电源按钮 + 40dp 图标，marginTop 90
         Surface(
             shape = CircleShape,
             color = RemoteColors.key,
             modifier = Modifier
+                .padding(top = 90.dp)
                 .size(75.dp)
                 .clickable { viewModel.tvKey("POWER") }
         ) {
@@ -655,7 +684,34 @@ private fun TvRemoteContent(
             }
         }
 
+        // 原版中部三列：左列三按钮竖排（100dp 宽 × 230dp 高三等分、间隔 30）
+        // + 方向区 + 右列（音量半圆紧贴堆叠、图标距顶/底 20dp + 25dp + "123"）
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                modifier = Modifier.height(230.dp),
+                verticalArrangement = Arrangement.spacedBy(30.dp)
+            ) {
+                TvPanelButton(
+                    label = "主页",
+                    onClick = { viewModel.tvKey("HOME") },
+                    modifier = Modifier.weight(1f)
+                )
+                TvPanelButton(
+                    label = if (isPlaying) "暂停" else "播放",
+                    onClick = { togglePlayPause() },
+                    modifier = Modifier.weight(1f)
+                )
+                if (sources.isNotEmpty()) {
+                    TvPanelButton(
+                        label = "信号源",
+                        onClick = { sourceDialogOpen = true },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(20.dp))
+
             // 方向环（硬件方向键 19/20/21/22 + OK 23 的屏上等价物；
             // 原版 LongPressKeyHandler(500)：长按 500ms 后连发）
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -672,9 +728,9 @@ private fun TvRemoteContent(
                 RemoteKey(label = "▼", longRepeat = true, onClick = { viewModel.tvKey("DOWN") })
             }
 
-            Spacer(Modifier.width(28.dp))
+            Spacer(Modifier.width(20.dp))
 
-            // 原版右侧列：音量半圆 80×75dp + "123" 数字键盘入口 100×55dp
+            // 右列：音量半圆 80×75dp + 25dp + "123" 数字键盘入口 100×55dp
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // rlAndroidTvAddVolume：上半圆
                 Surface(
@@ -687,8 +743,13 @@ private fun TvRemoteContent(
                             onRepeat = { viewModel.tvKey("VOLUME_UP") }
                         )
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(text = "＋", fontSize = 28.sp, color = RemoteColors.onSurface)
+                    Box(contentAlignment = Alignment.TopCenter) {
+                        Text(
+                            text = "＋",
+                            fontSize = 28.sp,
+                            color = RemoteColors.onSurface,
+                            modifier = Modifier.padding(top = 20.dp)
+                        )
                     }
                 }
                 // rlAndroidTvReduceVolume：下半圆
@@ -702,11 +763,16 @@ private fun TvRemoteContent(
                             onRepeat = { viewModel.tvKey("VOLUME_DOWN") }
                         )
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(text = "－", fontSize = 28.sp, color = RemoteColors.onSurface)
+                    Box(contentAlignment = Alignment.BottomCenter) {
+                        Text(
+                            text = "－",
+                            fontSize = 28.sp,
+                            color = RemoteColors.onSurface,
+                            modifier = Modifier.padding(bottom = 20.dp)
+                        )
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(25.dp))
                 // 原版 llNumKey：100×55dp "123" 入口，弹出数字键盘
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -723,18 +789,6 @@ private fun TvRemoteContent(
                         )
                     }
                 }
-            }
-        }
-
-        // 原版左列三按钮（100dp 宽、~76dp 高）：主页 / 播放暂停 / 信号源
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            TvPanelButton(label = "主页", onClick = { viewModel.tvKey("HOME") })
-            TvPanelButton(
-                label = if (isPlaying) "暂停" else "播放",
-                onClick = { togglePlayPause() }
-            )
-            if (sources.isNotEmpty()) {
-                TvPanelButton(label = "信号源", onClick = { sourceDialogOpen = true })
             }
         }
 
@@ -803,12 +857,13 @@ private fun TvRemoteContent(
 private fun TvPanelButton(
     label: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = RemoteColors.key,
-        modifier = Modifier
-            .size(width = 100.dp, height = 76.dp)
+        modifier = modifier
+            .size(width = 100.dp, height = 56.dp)
             .clickable(onClick = onClick)
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -1006,10 +1061,10 @@ private fun ClimateContent(
                         Row(verticalAlignment = Alignment.Top) {
                             Text(
                                 text = formatTemp(displayTemp),
-                                // 原版 TemperatureValueTextView：自绘测量宽度自动
-                                // 缩字号（TEMP_TEXT_MIN/MAX_SP），永不换行
+                                // 原版 TemperatureValueTextView：70sp 起自动缩至
+                                // 32sp（步长 1sp），永不换行
                                 autoSize = TextAutoSize.StepBased(
-                                    minFontSize = 30.sp, maxFontSize = 64.sp, stepSize = 2.sp
+                                    minFontSize = 32.sp, maxFontSize = 70.sp, stepSize = 1.sp
                                 ),
                                 maxLines = 1,
                                 softWrap = false,
@@ -1018,7 +1073,8 @@ private fun ClimateContent(
                             )
                             Text(
                                 text = "°",
-                                fontSize = 19.sp, // 原版度符号比例 0.3 × 温度字号
+                                // 原版度符号比例 0.3 × 温度字号（满档 70sp→21sp）
+                                fontSize = 21.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = RemoteColors.onSurface
                             )
@@ -1026,7 +1082,7 @@ private fun ClimateContent(
                         if (currentTemp != null) {
                             Text(
                                 text = "当前温度  ${formatTemp(currentTemp)}°",
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 color = Color(0xFFA5A5A5) // 原版 text_off_white
                             )
                         }
@@ -1036,9 +1092,9 @@ private fun ClimateContent(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = currentTemp?.let { formatTemp(it) } ?: "--",
-                            // 同原版：测量宽度自动缩字号，不换行
+                            // 原版 heatCool 当前温度 70dp 字号
                             autoSize = TextAutoSize.StepBased(
-                                minFontSize = 28.sp, maxFontSize = 56.sp, stepSize = 2.sp
+                                minFontSize = 28.sp, maxFontSize = 70.sp, stepSize = 1.sp
                             ),
                             maxLines = 1,
                             softWrap = false,
@@ -1445,12 +1501,12 @@ private fun LightContent(
                         .padding(horizontal = 16.dp) // 原版 rlPanel0 marginLeft/Right 16
                         .alpha(panelAlpha)
                 ) {
+                // 原版 BrightnessWithLabelView：百分比数字 100px、% 30px（10:3），
+                // 未加粗，位于左上（无边距）
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Spacer(Modifier.width(24.dp))
                     Text(
                         text = "${brightnessDisplay.value.toInt()}",
                         fontSize = 55.sp,
-                        fontWeight = FontWeight.Bold,
                         color = RemoteColors.onSurface
                     )
                     Text(
@@ -1513,7 +1569,8 @@ private fun LightContent(
                         glyph = "✦",
                         enabled = isOn,
                         onClick = { subPage = "effect" },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        smallEffectIcon = true
                     )
                 }
             }
@@ -1621,7 +1678,8 @@ private fun LightContent(
     }
 }
 
-/** 原版三入口项：60×60dp 圆角图标块 + 20sp 白色标签（light_color_item_bg）。 */
+/** 原版三入口项：白光/彩光 60×60dp、效果 47×47dp+marginTop 6（light_color_item_bg），
+ *  标签 20sp 白色 paddingBottom 2。 */
 @Composable
 private fun LightModeEntry(
     label: String,
@@ -1629,22 +1687,26 @@ private fun LightModeEntry(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    smallEffectIcon: Boolean = false,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
     ) {
+        // 原版效果入口 icon_preset 47×47 + marginTop 6，白光/彩光 60×60
+        val iconSize = if (smallEffectIcon) 47.dp else 60.dp
+        Spacer(Modifier.height(if (smallEffectIcon) 6.dp else 0.dp))
         Surface(
             shape = RoundedCornerShape(14.dp),
             color = RemoteColors.key,
             modifier = Modifier
-                .size(60.dp)
+                .size(iconSize)
                 .clickable(enabled = enabled, onClick = onClick)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     text = glyph,
-                    fontSize = 28.sp,
+                    fontSize = if (smallEffectIcon) 22.sp else 28.sp,
                     color = RemoteColors.onSurface
                 )
             }
@@ -1917,19 +1979,21 @@ private fun FanContent(
                             .weight(1f)
                             .clickable(enabled = isOn) { setFanSpeed(value) }
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
+                        // 原版行内布局：40dp 宽风叶图标在上、15dp 文本在下（垂直居中）
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(15.dp) // 原版行 padding 15
                         ) {
                             Text(
                                 text = "✳",
-                                fontSize = (24 + index * 4).sp, // 原版风叶图标随档位增强
+                                fontSize = 24.sp,
+                                modifier = Modifier.width(40.dp), // 原版图标固定 40dp 宽
+                                textAlign = TextAlign.Center,
                                 color = if (isSelected) RemoteColors.accent else RemoteColors.onSurfaceVariant
                             )
-                            Spacer(Modifier.width(10.dp))
                             Text(
                                 text = levelLabels[index],
                                 fontSize = 15.sp,
@@ -2011,7 +2075,7 @@ private fun CoverContent(
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(100.dp)) // 原版 CurtainView marginTop 100
 
         // 原版 CurtainView：300×250dp 可拖动窗帘轨道
         CurtainDragView(
@@ -2374,7 +2438,7 @@ private fun MediaContent(
         Column(modifier = Modifier.padding(5.dp)) {
             if (duration > 0f) {
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(17.dp)) // 原版当前时间 marginStart 17
                     Text(
                         text = formatDuration(seekDisplay.value.toInt().coerceAtLeast(0)),
                         fontSize = 14.sp,
@@ -2386,7 +2450,7 @@ private fun MediaContent(
                         fontSize = 14.sp,
                         color = Color.White.copy(alpha = 0.7f)
                     )
-                    Spacer(Modifier.width(13.dp))
+                    Spacer(Modifier.width(18.dp)) // 原版总时长 marginEnd 18
                 }
                 NativeSlider(
                     value = seekDisplay.value,
@@ -2406,14 +2470,14 @@ private fun MediaContent(
             }
         }
 
-        // 原版 tvMediaTitle 16sp / tvMediaArtist 12sp（alpha 0.7）
+        // 原版 tvMediaTitle 16sp marginStart 10 / tvMediaArtist 12sp（alpha 0.7）
         Text(
             text = title.ifBlank { translateOnOff(state) },
             fontSize = 16.sp,
             color = RemoteColors.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 15.dp, end = 60.dp, top = 10.dp)
+            modifier = Modifier.padding(start = 10.dp, end = 60.dp, top = 10.dp)
         )
         if (artist.isNotBlank()) {
             Text(
@@ -2422,7 +2486,7 @@ private fun MediaContent(
                 color = Color.White.copy(alpha = 0.7f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 15.dp, end = 20.dp, top = 4.dp)
+                modifier = Modifier.padding(start = 10.dp, end = 20.dp, top = 4.dp)
             )
         }
 
@@ -2464,7 +2528,7 @@ private fun MediaContent(
             Spacer(Modifier.width(40.dp))
         }
 
-        // 音量行：按钮 55×55dp 右对齐 → 浮动音量面板
+        // 原版 rlMediaVolume：音量按钮 55×55dp 位于进度条下方右缘（marginBottom 5）
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
@@ -2477,7 +2541,6 @@ private fun MediaContent(
                     volumePanelShown = !volumePanelShown
                 }
             )
-            Spacer(Modifier.width(10.dp))
         }
 
         if (volumePanelShown) {

@@ -304,7 +304,8 @@ private fun TimeTopBar(connected: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(30.dp),
+            .padding(top = 15.dp) // 原版 IndexTopView marginTop 15
+            .height(25.dp), // 原版高度 25dp
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -334,10 +335,11 @@ private fun TimeTopBar(connected: Boolean) {
             )
             Spacer(Modifier.weight(1f))
             if (battery != null) {
+                // 原版 BatteryView 27×13（描边 2px + 电极）
                 Box(
                     modifier = Modifier
-                        .size(width = 15.dp, height = 8.dp)
-                        .border(1.dp, RemoteColors.topBarText, RoundedCornerShape(2.dp)),
+                        .size(width = 27.dp, height = 13.dp)
+                        .border(2.dp, RemoteColors.topBarText, RoundedCornerShape(2.dp)),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Box(
@@ -345,7 +347,7 @@ private fun TimeTopBar(connected: Boolean) {
                             .fillMaxWidth((battery.toFloat() / 100f).coerceIn(0f, 1f))
                             .padding(horizontal = 1.dp)
                             .background(RemoteColors.topBarText)
-                            .height(4.dp)
+                            .height(7.dp)
                     )
                 }
                 Spacer(Modifier.width(5.dp))
@@ -451,38 +453,31 @@ private fun RoomDeviceList(
         }
         return
     }
-    // 原版双列设备卡片网格：静态两列布局（设备数量有限，Lazy 机制反而
-    // 产生惰性测量长帧）。
+    // 原版设备列表：单列纵向（LinearLayoutManager）、item 间距 15dp、
+    // 左右 padding 15dp（layout_device_list + SpaceItemDecoration(15)）
     Column(
         modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 15.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(15.dp)
     ) {
-        uniqueCards.chunked(2).forEach { rowCards ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                rowCards.forEach { card ->
-                    Box(modifier = Modifier.weight(1f)) {
-                        DeviceCard(
-                            card = card,
-                            name = card.displayName(haStates),
-                            stateText = cardStateText(card, haStates),
-                            isBlind = card.primaryEntity?.entityId
-                                ?.let { haStates["$it.current_tilt_position"] != null } == true,
-                            emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
-                                card.primaryEntity?.entityId
-                                    ?.let { haStates[it]?.state }
-                                    ?.let { weatherEmoji(it) }
-                            } else {
-                                null
-                            },
-                            onClick = { onOpenCard(card) }
-                        )
-                    }
-                }
-                if (rowCards.size == 1) Spacer(Modifier.weight(1f))
-            }
+        uniqueCards.forEach { card ->
+            DeviceCard(
+                card = card,
+                name = card.displayName(haStates),
+                stateText = cardStateText(card, haStates),
+                isBlind = card.primaryEntity?.entityId
+                    ?.let { haStates["$it.current_tilt_position"] != null } == true,
+                emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
+                    card.primaryEntity?.entityId
+                        ?.let { haStates[it]?.state }
+                        ?.let { weatherEmoji(it) }
+                } else {
+                    null
+                },
+                onClick = { onOpenCard(card) }
+            )
         }
     }
 }
@@ -619,7 +614,7 @@ private fun EmptyLayoutHint(pairingUrl: String?, onRefresh: () -> Unit) {
             .padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(60.dp))
+        Spacer(Modifier.height(100.dp)) // 原版 rlDeviceEmpty 内容 marginTop 100
         Icon(
             painter = painterResource(R.drawable.ic_panel_host),
             contentDescription = null,

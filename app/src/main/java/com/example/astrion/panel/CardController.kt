@@ -19,6 +19,7 @@ class CardController @Inject constructor(
     private val haStatesStore: HomeAssistantStatesStore,
     private val eventHub: PanelEventHub,
     private val acModePrefs: AcModePrefs,
+    private val panelUiEvents: PanelUiEvents,
 ) {
     // ── TV remote keys ──────────────────────────────────────────────────
 
@@ -283,14 +284,20 @@ class CardController @Inject constructor(
     }
 
     /**
-     * 长按自动重复步进（原版 200ms 重复）。由设备详情页持有，按键松开
-     * （cancel 事件）后停止。
+     * 长按自动重复（原版各页 KEY_INTERVAL 节奏）。由设备详情页持有，按键松开
+     * （cancel 事件）后停止。[repeat] 为重复序号（长按首触发=0，之后 1、2…），
+     * 空调温度用原始步进 + repeat×1.0 递增（原版 step 累加）。
      */
-    suspend fun holdDeviceStep(card: PanelCard, keyCode: Int) {
-        if (!applyDeviceStep(card, keyCode, large = true)) return
+    suspend fun holdDeviceStep(card: PanelCard, keyCode: Int, repeat: Int) {
+        if (!applyDeviceStep(card, keyCode, large = true, repeat = repeat)) return
     }
 
-    private suspend fun applyDeviceStep(card: PanelCard, keyCode: Int, large: Boolean): Boolean {
+    private suspend fun applyDeviceStep(
+        card: PanelCard,
+        keyCode: Int,
+        large: Boolean,
+        repeat: Int = 0,
+    ): Boolean {
         val entityId = card.primaryEntity?.entityId ?: return false
         val state = haStatesStore.states.value[entityId]?.state
         // resolvedType（含 domain 推断）：集成生成的布局卡片可以不带 type 字段
@@ -304,8 +311,12 @@ class CardController @Inject constructor(
                     22 -> pressTvKey(card, "RIGHT")
                     23 -> pressTvKey(card, "CENTER")
                     4 -> {
-                        // 原版 BACK：短按发送 BACK 键；长按 >2s 退出页面（不连发）
-                        if (!large) pressTvKey(card, "BACK")
+                        // 原版 BACK：短按发送 BACK 键；按住 2s 退出页面（长按
+                        // 首触发只退一次，后续 hold 重复不再触发）
+                        when {
+                            !large -> pressTvKey(card, "BACK")
+                            repeat == 0 -> panelUiEvents.requestBack()
+                        }
                         true
                     }
                     24 -> pressTvKey(card, "VOLUME_UP")
@@ -315,6 +326,8 @@ class CardController @Inject constructor(
                     93 -> pressTvKey(card, "CHANNEL_DOWN")
                     82 -> pressTvKey(card, "MENU")
                     132 -> pressTvKey(card, "POWER")
+                    // 原版 keyCodeToTvKey：131/136 → HOME（遥控器语音/主页键）
+                    131, 136 -> pressTvKey(card, "HOME")
                     // 原版 initKeyMap：134-141 = F4-F11（send_command 键名）
                     134 -> pressTvKey(card, "F4")
                     135 -> pressTvKey(card, "F5")
@@ -333,20 +346,33 @@ class CardController @Inject constructor(
                 val current = haStatesStore.states.value["$entityId.temperature"]
                     ?.state?.toDoubleOrNull()
                 // 原版 mTemperatureStep：设备步进（target_temp_step），默认 1.0；
-                // 物理键长按由调用方以 300ms（原版 KEY_INTERVAL）节奏重复触发
+                // 长按（原版 300ms KEY_INTERVAL）时步进累加 1.0f：repeat 为长按
+                // 重复序号（0=长按首触发，与单击同幅）
                 val step = haStatesStore.states.value["$entityId.target_temp_step"]
                     ?.state?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 1.0
+                val delta = step + repeat * 1.0f
                 when (keyCode) {
                     24 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) + step); true
+                        climateSetTemperature(entityId, (current ?: 24.0) + delta); true
                     }
 
                     25 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) - step); true
+                        climateSetTemperature(entityId, (current ?: 24.0) - delta); true
                     }
 
-                    92, 93 -> {
-                        cycleClimateFanMode(entityId); true
+                    // 原版 keyControlFanSpeed：92=风速降 / 93=风速升（按上报
+                    // fan_modes 移动，到边界停住不回绕）
+                    92 -> {
+                        shiftClimateFanMode(entityId, -1); true
+                    }
+
+                    93 -> {
+                        shiftClimateFanMode(entityId, +1); true
+                    }
+
+                    // 原版 AcControlView：UP 164 → 启动 HomeActivity（回首页）
+                    164 -> {
+                        panelUiEvents.requestGoHome(); true
                     }
 
                     132 -> {
@@ -434,22 +460,44 @@ class CardController @Inject constructor(
                 }
             }
 
-            PanelCardTypes.COVER -> when (keyCode) {
-                // 原版 CurtainActivity.dispatchKeyEvent：只消费 132（开/关切换，
-                // keyControl0penOrClose 按 openFlag 翻转）与 23（停止）；
-                // 其余键透传系统（返回 false 落到音量回退）。
-                132 -> {
-                    if (large) false
-                    else {
-                        if (state == "open") coverClose(entityId) else coverOpen(entityId); true
+            PanelCardTypes.COVER -> {
+                // 原版 CurtainActivity：132（开/关切换）与 23（停止）；
+                // 百叶窗（CurtainBlindsActivity）：24/25→位置 ±（长按 step=5）、
+                // 92/93→倾斜 ±。普通窗帘其余键透传。
+                val supportsTilt =
+                    haStatesStore.states.value["$entityId.current_tilt_position"] != null
+                when (keyCode) {
+                    132 -> {
+                        if (large) false
+                        else {
+                            if (state == "open") coverClose(entityId) else coverOpen(entityId); true
+                        }
                     }
-                }
 
-                23 -> {
-                    coverStop(entityId); true
-                }
+                    23 -> {
+                        coverStop(entityId); true
+                    }
 
-                else -> false
+                    24, 25 -> {
+                        if (!supportsTilt) false
+                        else {
+                            // 24=开大位置 / 25=收小位置；长按步进 5（原版 LONG_STEP_VALUE）
+                            val dir = if (keyCode == 24) 1 else -1
+                            shiftCoverPosition(entityId, dir * if (large) 5 else 1)
+                        }
+                    }
+
+                    92, 93 -> {
+                        if (!supportsTilt) false
+                        else {
+                            // 93=倾斜加大 / 92=倾斜减小（对齐原版 92=降 93=升）
+                            val dir = if (keyCode == 93) 1 else -1
+                            shiftCoverTilt(entityId, dir * if (large) 5 else 1)
+                        }
+                    }
+
+                    else -> false
+                }
             }
 
             PanelCardTypes.MEDIA_PLAYER -> {
@@ -488,17 +536,51 @@ class CardController @Inject constructor(
         }
     }
 
-    /** Steps through the reported fan mode list of the climate entity. */
-    private suspend fun cycleClimateFanMode(entityId: String) {
-        val current = haStatesStore.states.value["$entityId.fan_mode"]?.state ?: return
-        // 原版兼容层：风扇档位用设备上报的原始 fan_modes 清单循环（任意
-        // 取值透传），属性未同步时退回一组常见档位。
-        val modes = haStatesStore.states.value["$entityId.fan_modes"]?.state
+    /** 实体上报的风速档位清单（原始值透传），属性未同步时退回常见档位。 */
+    private fun climateFanModes(entityId: String): List<String> =
+        haStatesStore.states.value["$entityId.fan_modes"]?.state
             ?.split(',')?.map { it.trim() }?.filter { it.isNotBlank() }
             ?.takeIf { it.isNotEmpty() }
             ?: listOf("auto", "low", "medium", "high")
-        val next = modes[(modes.indexOf(current) + 1).mod(modes.size)]
+
+    /**
+     * 原版 keyControlFanSpeed：风速在档位清单上按方向移动一步，到边界停住
+     * （不回绕循环）。[dir] 为 +1（升，93 键）或 -1（降，92 键）。
+     */
+    private suspend fun shiftClimateFanMode(entityId: String, dir: Int) {
+        val modes = climateFanModes(entityId)
+        if (modes.isEmpty()) return
+        val current = haStatesStore.states.value["$entityId.fan_mode"]?.state
+        val idx = modes.indexOf(current)
+        val next = when {
+            idx < 0 -> if (dir > 0) modes.first() else modes.last()
+            else -> modes[(idx + dir).coerceIn(modes.indices)]
+        }
         climateSetFanMode(entityId, next)
+    }
+
+    /** 百叶窗位置 ±[delta]%（原版 vSliderPosition 单步 1 / 长按 5）。 */
+    private suspend fun shiftCoverPosition(entityId: String, delta: Int): Boolean {
+        val cur = haStatesStore.states.value["$entityId.current_position"]
+            ?.state?.toIntOrNull() ?: return true // 无位置数据：消费按键不动作
+        val next = (cur + delta).coerceIn(0, 100)
+        haActionBus.callService(
+            "cover.set_cover_position",
+            mapOf("entity_id" to entityId, "position" to next)
+        )
+        return true
+    }
+
+    /** 百叶窗倾斜 ±[delta]%（原版 vSliderTilt 单步 1 / 长按 5）。 */
+    private suspend fun shiftCoverTilt(entityId: String, delta: Int): Boolean {
+        val cur = haStatesStore.states.value["$entityId.current_tilt_position"]
+            ?.state?.toIntOrNull() ?: return true
+        val next = (cur + delta).coerceIn(0, 100)
+        haActionBus.callService(
+            "cover.set_cover_tilt_position",
+            mapOf("entity_id" to entityId, "tilt_position" to next)
+        )
+        return true
     }
 
     private fun formatNumber(value: Double): String =

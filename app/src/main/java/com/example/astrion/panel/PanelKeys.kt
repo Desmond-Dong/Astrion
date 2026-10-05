@@ -16,7 +16,6 @@ import javax.inject.Singleton
 
 /** A physical key press reported by the activity. */
 private const val KEY_BACK = 4
-private const val KEY_HOME_PANEL = 164
 private const val KEY_VOLUME_UP = 24
 private const val KEY_VOLUME_DOWN = 25
 
@@ -82,17 +81,13 @@ class KeyRouter @Inject constructor(
         // Every physical key is reported to Home Assistant so automations can
         // see (and bind) any key, even when the panel itself ignores it.
         eventHub.announceKeyPressed(press.keyCode, press.longPress)
-        // 返回键：离开设备详情页回到上一级；首页键：回到应用首页
+        // 返回键：离开设备详情页回到上一级
         if (press.keyCode == KEY_BACK) {
             if (handlers.isNotEmpty()) panelUiEvents.requestBack()
             return true
         }
-        if (press.keyCode == KEY_HOME_PANEL) {
-            panelUiEvents.requestGoHome()
-            return true
-        }
-        // 164=静音（原版 BaseActivity 语义）：透传给设备页（媒体页 toggleMute、
-        // TV 页 toggleMute），非设备页落到绑定系统
+        // 164=Home 键原版由各页面优先消费：空调页回首页、媒体页静音、
+        // TV 页发 MUTE 命令；未消费时落绑定系统 → 默认绑定回首页
 
         if (topHandler()?.invoke(press) == true) return true
         if (keyBindingExecutor.handle(press)) return true
@@ -268,7 +263,9 @@ class KeyBindingExecutor @Inject constructor(
             137 to PanelCardTypes.CLIMATE
         )
         val result = mutableListOf(
-            KeyBinding(132, false, KeyBindingActions.HOME)
+            KeyBinding(132, false, KeyBindingActions.HOME),
+            // 原版 164=Home 键：设备页未消费时（首页/普通页）回面板首页
+            KeyBinding(164, false, KeyBindingActions.HOME)
         )
         defaults.forEach { (keycode, type) ->
             cards.firstOrNull { it.resolvedType == type }?.let { card ->
