@@ -296,6 +296,8 @@ fun PanelHomeScreen(
                     cards = allCards,
                     haStates = haStates,
                     onOpenCard = { card -> navController.navigate(DeviceDetail(card.cardId)) },
+                    onTogglePower = { card -> viewModel.toggleCardPower(card) },
+                    onExecuteScene = { card, done -> viewModel.executeScene(card, done) },
                     onAllOff = { card, type -> viewModel.allOff(card, type) },
                     modifier = Modifier.weight(1f)
                 )
@@ -471,6 +473,8 @@ private fun RoomDeviceList(
     cards: List<PanelCard>,
     haStates: Map<String, com.example.astrion.services.HaEntityState>,
     onOpenCard: (PanelCard) -> Unit,
+    onTogglePower: (PanelCard) -> Unit,
+    onExecuteScene: (PanelCard, () -> Unit) -> Unit,
     onAllOff: (PanelCard, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
@@ -589,10 +593,10 @@ private fun RoomDeviceList(
 
                         card.resolvedType == PanelCardTypes.FAN ||
                             card.resolvedType == PanelCardTypes.SWITCH ->
-                            viewModel.toggleCardPower(card)
+                            onTogglePower(card)
 
                         card.resolvedType == PanelCardTypes.SCENE ->
-                            viewModel.executeScene(card) {
+                            onExecuteScene(card) {
                                 sceneExecuted = true // 原版 cSExecute 成功动画 2s
                             }
 
