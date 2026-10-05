@@ -566,7 +566,7 @@ class CardController @Inject constructor(
         val next = (cur + delta).coerceIn(0, 100)
         haActionBus.callService(
             "cover.set_cover_position",
-            mapOf("entity_id" to entityId, "position" to next)
+            mapOf("entity_id" to entityId, "position" to next.toString())
         )
         return true
     }
@@ -578,7 +578,7 @@ class CardController @Inject constructor(
         val next = (cur + delta).coerceIn(0, 100)
         haActionBus.callService(
             "cover.set_cover_tilt_position",
-            mapOf("entity_id" to entityId, "tilt_position" to next)
+            mapOf("entity_id" to entityId, "tilt_position" to next.toString())
         )
         return true
     }
