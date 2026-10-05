@@ -25,14 +25,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -228,26 +222,14 @@ fun PanelHomeScreen(
 ) {
     val layout by viewModel.layout.collectAsStateWithLifecycle()
     val haStates by viewModel.haStates.collectAsStateWithLifecycle()
-    val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val raiseToWake by viewModel.raiseToWake.collectAsStateWithLifecycle()
     val screenSaverTimeout by viewModel.screenSaverTimeout.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val rooms = remember(layout) { layout.rooms }
-
-    val initialIndex = rooms.indexOfFirst { it.title == currentPage }.takeIf { it >= 0 } ?: 0
-    val pagerState = rememberPagerState(
-        initialPage = initialIndex.coerceIn(0, (rooms.size - 1).coerceAtLeast(0)),
-        pageCount = { rooms.size }
-    )
-    // HA navigate select drives the pager (§3.7 navigate_to).
-    LaunchedEffect(currentPage, rooms) {
-        val index = rooms.indexOfFirst { it.title == currentPage }
-        if (index >= 0 && pagerState.currentPage != index) {
-            pagerState.animateScrollToPage(index)
-        }
-    }
+    // 官方原版行为：所有设备同页显示（不分房间分页），一页纵向滚动网格
+    val allCards = remember(rooms) { rooms.flatMap { it.cards } }
 
     val connected = connectionState == HaConnectionState.Connected
     var quickSettingsOpen by remember { mutableStateOf(false) }
@@ -259,15 +241,11 @@ fun PanelHomeScreen(
             .topEdgeSwipeToOpen(enabled = !quickSettingsOpen) { quickSettingsOpen = true }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 原版 home_activity：IndexTopView(状态/时间条) + 下拉把手 + WiFi 提示 + 房间选择条
+            // 原版 home_activity：IndexTopView(状态/时间条) + 下拉把手 + WiFi 提示 + 房间名条
             TimeTopBar(connected = connected)
             SwipeHandle()
             if (!connected) WifiHintRow()
-            RoomSelectorBar(
-                roomTitle = rooms.getOrNull(pagerState.currentPage)?.title,
-                roomTitles = rooms.map { it.title },
-                onSelectRoom = { viewModel.selectRoom(it) }
-            )
+            HomeTitleBar()
 
             if (rooms.isEmpty()) {
                 val pairingUrl = if (!connected) {
@@ -278,25 +256,11 @@ fun PanelHomeScreen(
                 }
                 EmptyLayoutHint(pairingUrl = pairingUrl, onRefresh = { viewModel.refreshDevices() })
             } else {
-                HorizontalPager(
-                    state = pagerState,
-                    // 全部房间页常驻组合：滑动零组合帧（原版 ViewPager 常驻思路）
-                    beyondViewportPageCount = 3,
+                RoomDeviceList(
+                    cards = allCards,
+                    haStates = haStates,
+                    onOpenCard = { card -> navController.navigate(DeviceDetail(card.cardId)) },
                     modifier = Modifier.weight(1f)
-                ) { page ->
-                    val room = rooms.getOrNull(page)
-                    RoomDeviceList(
-                        cards = room?.cards ?: emptyList(),
-                        haStates = haStates,
-                        onOpenCard = { card -> navController.navigate(DeviceDetail(card.cardId)) }
-                    )
-                }
-                PageDotsIndicator(
-                    pageCount = rooms.size,
-                    currentPage = pagerState.currentPage,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 4.dp, bottom = 10.dp)
                 )
             }
         }
@@ -442,60 +406,23 @@ private fun WifiHintRow() {
     }
 }
 
-/** 原生居中房间选择条 rlViewLayout(30dp) + 原版房间名 23sp #E6CCCBCB + 三角图标。 */
+/** 原生居中标题条 rlViewLayout(30dp) + 原版字号 23sp #E6CCCBCB。
+ *  官方原版为房间选择器；本项目所有设备同页显示，固定标题"所有设备"。 */
 @Composable
-private fun RoomSelectorBar(
-    roomTitle: String?,
-    roomTitles: List<String>,
-    onSelectRoom: (String) -> Unit,
-) {
-    var menuOpen by remember { mutableStateOf(false) }
+private fun HomeTitleBar() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(30.dp),
         contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier.clickable(enabled = roomTitles.size > 1) { menuOpen = true },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = roomTitle ?: "Astrion",
-                color = RemoteColors.roomName,
-                fontSize = 23.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (roomTitles.size > 1) {
-                Spacer(Modifier.width(6.dp))
-                Text(text = "▾", color = RemoteColors.accent, fontSize = 18.sp)
-            }
-        }
-        DropdownMenu(
-            expanded = menuOpen,
-            onDismissRequest = { menuOpen = false },
-            containerColor = RemoteColors.popupBackground
-        ) {
-            roomTitles.forEachIndexed { index, title ->
-                DropdownMenuItem(
-                    text = { Text(title, color = RemoteColors.roomName, fontSize = 16.sp) },
-                    onClick = {
-                        menuOpen = false
-                        onSelectRoom(title)
-                    }
-                )
-                if (index < roomTitles.size - 1) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp)
-                            .height(1.dp)
-                            .background(RemoteColors.popupLine)
-                    )
-                }
-            }
-        }
+        Text(
+            text = "所有设备",
+            color = RemoteColors.roomName,
+            fontSize = 23.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -505,6 +432,7 @@ private fun RoomDeviceList(
     cards: List<PanelCard>,
     haStates: Map<String, com.example.astrion.services.HaEntityState>,
     onOpenCard: (PanelCard) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // 容错: duplicate keys would crash the grid - keep the first of any dupes
     val uniqueCards = remember(cards) { cards.distinctBy { it.cardId } }
@@ -518,16 +446,16 @@ private fun RoomDeviceList(
                     modifier = Modifier.size(48.dp)
                 )
                 Spacer(Modifier.height(14.dp))
-                Text(text = "此房间暂无设备", color = RemoteColors.hintText, fontSize = 15.sp)
+                Text(text = "暂无设备", color = RemoteColors.hintText, fontSize = 15.sp)
             }
         }
         return
     }
-    // 原版双列设备卡片网格：静态两列布局（房间设备少，Lazy 机制反而
-    // 在 Pager 滑动时产生惰性测量长帧）。
+    // 原版双列设备卡片网格：静态两列布局（设备数量有限，Lazy 机制反而
+    // 产生惰性测量长帧）。
     Column(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = modifier
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -679,31 +607,6 @@ private fun stateIconRes(type: String, isOn: Boolean, isBlind: Boolean = false):
         else -> R.drawable.ic_state_default to R.drawable.ic_state_default
     }
     return if (isOn) pair.first else pair.second
-}
-
-@Composable
-private fun PageDotsIndicator(
-    pageCount: Int,
-    currentPage: Int,
-    modifier: Modifier = Modifier,
-) {
-    if (pageCount <= 1) return
-    Row(
-        modifier = modifier.padding(top = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        repeat(pageCount) { index ->
-            Box(
-                modifier = Modifier
-                    .size(if (index == currentPage) 9.dp else 6.dp)
-                    .background(
-                        color = if (index == currentPage) RemoteColors.onSurface
-                        else RemoteColors.dot,
-                        shape = CircleShape
-                    )
-            )
-        }
-    }
 }
 
 /** 原版空态 rlDeviceEmpty：110dp 图标 + "暂无设备"(22sp 白) + 指引(18sp 白) +
