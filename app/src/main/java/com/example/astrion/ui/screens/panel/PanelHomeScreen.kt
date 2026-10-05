@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -711,10 +712,19 @@ private fun DeviceCard(
         PanelCardTypes.FAN, PanelCardTypes.TV, PanelCardTypes.MEDIA_PLAYER
     )
 
+    // 原版 TV 焦点导航：物理键上下在设备卡间移动焦点，焦点卡画 2px 描边
+    // （device_button_focuses_onclick_border，CardAppearanceHelper）
+    var isFocused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(155.dp)
+            .onFocusChanged { isFocused = it.isFocused }
+            .border(
+                width = if (isFocused) 2.dp else 0.dp,
+                color = Color.White.copy(alpha = 0.8f),
+                shape = RoundedCornerShape(12.dp)
+            )
             .clickable(onClick = onClick)
     ) {
         Column(
