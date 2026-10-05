@@ -55,11 +55,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.ui.text.font.FontWeight
@@ -67,6 +69,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -2169,9 +2172,13 @@ private fun CoverContent(
 }
 
 /**
- * 原版 CurtainView 复刻：300×250dp，浅灰轨道线（0xFFDBDADA），帘布左锚定、
- * 拖动手柄改变帘布覆盖 → 开度 = 100 - 覆盖比例。拖动中只回调显示值，
- * 松手回调一次提交值（原版 onPercentageChanged / onStopTrackingTouch）。
+ * 原版 CurtainView 位图级复刻：300×250dp 视图内，顶部一条 #242526 圆头轨道线
+ * （线宽 20dp、y 中心 10dp、两端缩进滑块宽 1/4），帘布位图
+ * （curtain_screening，588×231dp——右缘即"把手"）沿轨道拖动，滑块
+ * （curtain_slider 80px→53dp）挂在帘布右缘中点，拖动/聚焦时切换金色
+ * curtain_slider_icon_act。开度 = 100 − 帘布右缘位置比例（原版
+ * getPercentage = 100 − percentage）。拖动中 onDrag 只更新显示，松手
+ * onRelease 提交（原版 onPercentageChanged / onStopTrackingTouch）。
  */
 @Composable
 private fun CurtainDragView(
@@ -2180,49 +2187,68 @@ private fun CurtainDragView(
     onDrag: (Int) -> Unit,
     onRelease: (Int) -> Unit,
 ) {
-    var widthPx by remember { mutableStateOf(0) }
+    val viewW = 300.dp
+    val screening = ImageBitmap.imageResource(R.drawable.ic_curtain_screening)
+    val sliderNormal = ImageBitmap.imageResource(R.drawable.ic_curtain_slider)
+    val sliderActive = ImageBitmap.imageResource(R.drawable.ic_curtain_slider_act)
     val density = LocalDensity.current
-    val handleSize = with(density) { 44.dp.toPx() }
-    val sliderHalf = handleSize / 2f
 
-    // 手柄中心 x ↔ 开度换算（原版 setPercentage / drawCanvas 的映射）
-    fun handleXFor(openPct: Int): Float {
-        val track = (widthPx - sliderHalf).coerceAtLeast(1f)
-        return sliderHalf + (1f - openPct.coerceIn(0, 100) / 100f) * track
+    // 原版常量（hdpi px ÷ 1.5 → dp）
+    val screeningW = with(density) { 588.dp.toPx() }
+    val screeningH = with(density) { 231.dp.toPx() }
+    val sliderHalf = with(density) { 26.7f.dp.toPx() } // 80px hdpi 位图的一半 = 26.7dp
+    val lineY = with(density) { 10.dp.toPx() }
+    val screeningY = with(density) { 6.7.dp.toPx() }
+
+    var widthPx by remember { mutableStateOf(0f) }
+    var dragLeftX by remember { mutableStateOf<Float?>(null) }
+
+    // 原版 setPercentage：mLeftX = (width − sliderHalf)·(100−p)/100 + sliderHalf − screeningW
+    fun leftXFor(openPct: Int): Float {
+        val span = (widthPx - sliderHalf).coerceAtLeast(1f)
+        return span * ((100 - openPct.coerceIn(0, 100)) / 100f) + sliderHalf - screeningW
     }
 
-    fun openFor(handleX: Float): Int {
-        val track = (widthPx - sliderHalf).coerceAtLeast(1f)
-        val f = ((handleX - sliderHalf) / track).coerceIn(0f, 1f)
-        return (100 - Math.round(f * 100)).coerceIn(0, 100)
+    // 原版 drawCanvas：开度 = 100 − mIconX/(width − sliderHalf)·100，mIconX =
+    // mLeftX + screeningW − sliderHalf
+    fun openFor(leftX: Float): Int {
+        val span = (widthPx - sliderHalf).coerceAtLeast(1f)
+        val iconX = leftX + screeningW - sliderHalf
+        return (100 - Math.round(iconX / span * 100f)).coerceIn(0, 100)
     }
 
-    var handleX by remember { mutableStateOf<Float?>(null) }
-    val currentHandle = handleX ?: open?.let { handleXFor(it) } ?: sliderHalf
+    val restLeftX = open?.let { leftXFor(it) }
+    val mLeftX = dragLeftX ?: restLeftX ?: (sliderHalf - screeningW)
+    val mIconX = mLeftX + screeningW - sliderHalf
+    val isDragging = dragLeftX != null
 
     Box(
         modifier = Modifier
-            .size(width = 300.dp, height = 250.dp)
-            .onSizeChanged { widthPx = it.width }
+            .size(width = viewW, height = 250.dp)
+            .onSizeChanged { widthPx = it.width.toFloat() }
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    var last = openFor(down.position.x.coerceIn(0f, size.width.toFloat()))
+                    // 原版 onTouchEvent：leftOffset = downX − mLeftX，拖动锚定
+                    val leftOffset = down.position.x - (dragLeftX ?: restLeftX ?: mLeftX)
+                    var last = openFor(down.position.x - leftOffset)
                     onDrag(last)
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) {
+                            // 原版 UP：stopTracking 回调提交
                             onRelease(last)
-                            handleX = null // 松手后跟随状态值（阻塞期由 pendingSend 承接）
+                            dragLeftX = null
                             change.consume()
                             break
                         }
                         if (change.position != change.previousPosition) {
-                            val x = change.position.x.coerceIn(0f, size.width.toFloat())
-                            handleX = x
-                            last = openFor(x)
+                            val minX = sliderHalf - screeningW
+                            val maxX = widthPx - screeningW
+                            dragLeftX = (change.position.x - leftOffset).coerceIn(minX, maxX)
+                            last = openFor(dragLeftX!!)
                             onDrag(last)
                         }
                         change.consume()
@@ -2230,48 +2256,33 @@ private fun CurtainDragView(
                 }
             }
     ) {
-        // 轨道线（原版 mTopPaint：浅灰粗线，圆帽）
+        // 原版 onDraw：顶部轨道线（20dp 宽、圆帽、#242526，两端缩进 sliderHalf/2）
         Canvas(modifier = Modifier.fillMaxSize()) {
+            val inset = sliderHalf / 2f
             drawLine(
-                color = Color(0xFFDBDADA),
-                start = Offset(sliderHalf / 2f, 4.dp.toPx()),
-                end = Offset(size.width - sliderHalf / 2f, 4.dp.toPx()),
-                strokeWidth = 4.dp.toPx(),
+                color = Color(0xFF242526),
+                start = Offset(inset, lineY),
+                end = Offset(size.width - inset, lineY),
+                strokeWidth = 20.dp.toPx(),
                 cap = StrokeCap.Round
             )
         }
-        // 帘布：左锚定到当前手柄处（原版 mScreening 帘布位图）
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        (currentHandle - handleSize).toInt().coerceAtLeast(0),
-                        3.dp.roundToPx()
-                    )
-                }
-                .width(with(density) { currentHandle.coerceAtLeast(0f).toDp() })
-                .height(with(density) { (250.dp.toPx() - 10.dp.toPx()).toDp() })
-                .clip(RoundedCornerShape(10.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color(0xFF3A3A3C), Color(0xFF232325))
-                    )
-                )
-        )
-        // 拖动手柄（原版 mSlider 滑块图标，位于帘布右缘）
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        (currentHandle - sliderHalf).toInt().coerceAtLeast(0),
-                        (125).dp.roundToPx() - (handleSize / 2f).toInt()
-                    )
-                }
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(Color(0xFFDBDADA))
-                .border(3.dp, Color(0xFF2B2B2B), CircleShape)
-        )
+        // 帘布位图（按原版密度语义绘制 588×231dp）
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawImage(
+                image = screening,
+                dstOffset = IntOffset(mLeftX.toInt(), screeningY.toInt()),
+                dstSize = IntSize(screeningW.toInt(), screeningH.toInt())
+            )
+        }
+        // 滑块：挂在帘布右缘中点，拖动/聚焦时用金色 act 图
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawImage(
+                image = if (isDragging) sliderActive else sliderNormal,
+                dstOffset = IntOffset(mIconX.toInt(), (screeningH / 2f - sliderHalf + screeningY).toInt()),
+                dstSize = IntSize((sliderHalf * 2f).toInt(), (sliderHalf * 2f).toInt())
+            )
+        }
     }
 }
 
