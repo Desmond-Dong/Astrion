@@ -2431,14 +2431,13 @@ private fun MediaContent(
         }
     }
 
-    // 音量拖动节流 100ms，松手精确下发（原版 volume_set 回调）
+    // 音量拖动节流 100ms，松手精确下发（原版 volume_set 回调）。
+    // 拖动中不跟随 HA 回写（原版 "volume" 用户覆盖窗口）
+    var volumeThrottleDragging by remember { mutableStateOf(false) }
     val volumeDisplay = remember { mutableStateOf(volume * 100f) }
     LaunchedEffect(volume) {
         if (!volumeThrottleDragging) volumeDisplay.value = volume * 100f
     }
-    // 音量拖动节流 100ms，松手精确下发（原版 volume_set 回调）。
-    // 拖动中不跟随 HA 回写（原版 "volume" 用户覆盖窗口）
-    var volumeThrottleDragging by remember { mutableStateOf(false) }
     val volumeThrottle = rememberValueThrottle<Float>(
         send = { v -> viewModel.mediaVolume(v / 100f) },
         intervalMs = 100
