@@ -720,11 +720,13 @@ private fun DeviceCard(
             .fillMaxWidth()
             .height(155.dp)
             .onFocusChanged { isFocused = it.isFocused }
-            .border(
-                width = if (isFocused) 2.dp else 0.dp,
-                color = Color.White.copy(alpha = 0.8f),
-                shape = RoundedCornerShape(12.dp)
-            )
+            .let {
+                if (isFocused) it.border(
+                    width = 2.dp,
+                    color = Color.White.copy(alpha = 0.8f),
+                    shape = RoundedCornerShape(12.dp)
+                ) else it
+            }
             .clickable(onClick = onClick)
     ) {
         Column(
