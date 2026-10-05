@@ -308,6 +308,9 @@ class DeviceDetailViewModel @Inject constructor(
     /** 物理键长按自动重复（原版 200ms 间隔），松手 cancel 停止。 */
     private var holdJob: Job? = null
 
+    /** 灯光子页打开标志（子页期间物理键不作用于主页，原版为独立 Activity）。 */
+    var subPageOpen: Boolean = false
+
     // 稳定引用：入栈/出栈必须是同一个对象
     private val keyHandler: suspend (KeyPress) -> Boolean = { press -> handleKey(press) }
 
@@ -347,6 +350,9 @@ class DeviceDetailViewModel @Inject constructor(
             stopHold()
             return true
         }
+        // 灯光子页（色温/RGB/效果）打开时物理键不作用于主页
+        //（原版子页为独立 Activity，主页键不在其中生效）
+        if (subPageOpen) return true
         val current = card.value ?: return false
         return if (press.longPress) {
             // 长按触发一次大步，随后保持循环
@@ -574,21 +580,28 @@ private fun RemoteKey(
     }
 }
 
-/** 原版 item_round_bg 圆形按钮（60×60dp 圆底，禁用时 alpha 0.5，原版 setControlEnabled）。 */
+/** 原版 item_round_bg 圆形按钮（60×60dp 圆底，禁用时 alpha 0.5，原版 setControlEnabled）。
+ *  longRepeat：长按 500ms 后 300ms 间隔连发（原版 AcTemperatureRangePopup repeatRunnable）。 */
 @Composable
 private fun RoundIconButton(
     size: Int,
     label: String,
     enabled: Boolean = true,
+    longRepeat: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val surfaceModifier = if (longRepeat) {
+        Modifier.holdRepeat(onTap = onClick, onRepeat = onClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
     Surface(
         shape = CircleShape,
         color = RemoteColors.key,
         modifier = Modifier
             .size(size.dp)
             .alpha(if (enabled) 1f else 0.5f)
-            .clickable(enabled = enabled, onClick = onClick)
+            .let { if (enabled) it.then(surfaceModifier) else it }
     ) {
         Box(contentAlignment = Alignment.Center) {
             Text(
@@ -892,8 +905,8 @@ private fun TvPanelButton(
 /**
  * 原版 TvNumberKeyboardDialog（dialog_tv_number_keyboard.xml）：底部弹出，
  * 行高 60dp、键间距 4dp、文字 20sp；行序 1-9 / A B C / 删除 0 退格 / ok；
- * 数字发 NUM_n，ABC 发 KEY_A/B/C，退格发 DELETE，返回发 BACK，
- * ok 发 CENTER 并关闭。
+ * 数字发 NUM_n，ABC 发 KEY_A/B/C，退格发 DELETE，返回发 BACK（均不关窗）；
+ * ok **只关闭弹窗，不发任何键**（原版 btn_ok 仅 dismiss）。
  */
 @Composable
 private fun TvNumberPadDialog(
@@ -913,7 +926,7 @@ private fun TvNumberPadDialog(
                     listOf("7" to "NUM_7", "8" to "NUM_8", "9" to "NUM_9"),
                     listOf("A" to "KEY_A", "B" to "KEY_B", "C" to "KEY_C"),
                     listOf("⌫" to "DELETE", "0" to "NUM_0", "↩" to "BACK"),
-                    listOf("ok" to "CENTER")
+                    listOf("ok" to null)
                 )
                 rows.forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -925,8 +938,11 @@ private fun TvNumberPadDialog(
                                     .weight(1f)
                                     .height(60.dp)
                                     .clickable {
-                                        onKey(key)
-                                        if (key == "CENTER") onDismiss()
+                                        if (key == null) {
+                                            onDismiss() // 原版 btn_ok 仅 dismiss
+                                        } else {
+                                            onKey(key) // 其余键发命令不关窗
+                                        }
                                     }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -1052,20 +1068,23 @@ private fun ClimateContent(
 
         Spacer(Modifier.height(30.dp)) // 原版 rlPanel0 marginTop 30
 
-        // rlPanel1：200dp 高的温度面板
+        // rlPanel1：200dp 高的温度面板。原版 heat_cool 下 ±按钮与 tvSetTemp
+        // 整体 GONE（updateTemperaturePanel），只有 heatCoolPanel
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // rlAcTempAddReduce：85×175dp，marginLeft 20
-            TemperatureSideButton(
-                symbol = "−",
-                enabled = available && !isRange,
-                onStep = { tick -> stepTemp(-1, tick) },
-                modifier = Modifier.padding(start = 20.dp)
-            )
+            if (!isRange) {
+                // rlAcTempAddReduce：85×175dp，marginLeft 20
+                TemperatureSideButton(
+                    symbol = "−",
+                    enabled = available,
+                    onStep = { tick -> stepTemp(-1, tick) },
+                    modifier = Modifier.padding(start = 20.dp)
+                )
+            }
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 if (!isRange) {
                     // tvSetTemp：100×110dp，70sp 粗体 + 度符号（0.3 比例）+ 当前温度
@@ -1142,13 +1161,15 @@ private fun ClimateContent(
                     }
                 }
             }
-            // rlAcTempAdd：85×175dp，marginRight 20
-            TemperatureSideButton(
-                symbol = "+",
-                enabled = available && !isRange,
-                onStep = { tick -> stepTemp(1, tick) },
-                modifier = Modifier.padding(end = 20.dp)
-            )
+            // rlAcTempAdd：85×175dp，marginRight 20（heat_cool 下 GONE）
+            if (!isRange) {
+                TemperatureSideButton(
+                    symbol = "+",
+                    enabled = available,
+                    onStep = { tick -> stepTemp(1, tick) },
+                    modifier = Modifier.padding(end = 20.dp)
+                )
+            }
         }
 
         Spacer(Modifier.height(50.dp)) // 原版模式行 marginTop 50
@@ -1369,6 +1390,7 @@ private fun RangeTemperatureDialog(
                     size = 60,
                     label = "−",
                     enabled = canDown,
+                    longRepeat = true,
                     onClick = { adjust(false) }
                 )
                 Text(
@@ -1387,6 +1409,7 @@ private fun RangeTemperatureDialog(
                     size = 60,
                     label = "+",
                     enabled = canUp,
+                    longRepeat = true,
                     onClick = { adjust(true) }
                 )
             }
@@ -1467,8 +1490,13 @@ private fun LightContent(
 
     val scope = rememberCoroutineScope()
 
-    // 亮度：拖动 100ms 节流，松手精确下发（原版 ThrottlerUtil(100)）
-    val brightnessDisplay = remember(brightnessAttr) { mutableStateOf(brightnessAttr) }
+    // 亮度：拖动 100ms 节流，松手精确下发（原版 ThrottlerUtil(100)）。
+    // 拖动中不跟随 HA 回写（原版 mIsBrightnessSliding + 3s 用户覆盖窗口）
+    var brightnessSliding by remember { mutableStateOf(false) }
+    val brightnessDisplay = remember { mutableStateOf(brightnessAttr) }
+    LaunchedEffect(brightnessAttr) {
+        if (!brightnessSliding) brightnessDisplay.value = brightnessAttr
+    }
     val brightnessThrottle = rememberValueThrottle<Float>(
         send = { v -> viewModel.lightOn(brightnessPct = v.toInt()) },
         intervalMs = 100
@@ -1485,10 +1513,13 @@ private fun LightContent(
         }
     }
 
-    // 子页状态：null=主面板，"colorTemp"/"rgb"/"effect"=对应子页（原版跳转 Activity）
+    // 子页状态：null=主面板，"colorTemp"/"rgb"/"effect"=对应子页（原版跳转 Activity）。
+    // 同步到 ViewModel 供物理键隔离（子页打开时主页键不生效）
     var subPage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(subPage) { viewModel.subPageOpen = subPage != null }
 
-    val panelAlpha = if (isOn) 1f else 0.5f // 原版 refreshPowerStatusToUI
+    // 原版 refreshPowerStatusToUI：关灯面板 alpha 0.3 + 拦截触摸
+    val panelAlpha = if (isOn) 1f else 0.3f
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -1514,8 +1545,12 @@ private fun LightContent(
                         .alpha(panelAlpha)
                 ) {
                 // 原版 BrightnessWithLabelView：百分比数字 100px、% 30px（10:3），
-                // 未加粗，位于左上（无边距）
-                Row(verticalAlignment = Alignment.Bottom) {
+                // 未加粗，居中（RelativeLayout gravity 0x11）
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
                     Text(
                         text = "${brightnessDisplay.value.toInt()}",
                         fontSize = 55.sp,
@@ -1526,16 +1561,17 @@ private fun LightContent(
                         fontSize = 17.sp, // 原版 Spannable 100:30 比例
                         color = RemoteColors.onSurface
                     )
-                    Spacer(Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(20.dp))
                 NativeSlider(
                     value = brightnessDisplay.value,
                     onDrag = { v ->
+                        brightnessSliding = true
                         brightnessDisplay.value = v
                         brightnessThrottle.onDrag(v)
                     },
                     onCommit = { v ->
+                        brightnessSliding = false
                         brightnessDisplay.value = v
                         brightnessThrottle.onCommit(v)
                     },
@@ -1544,7 +1580,7 @@ private fun LightContent(
                     thickness = 28.dp,
                     thumbSize = 80.dp, // 原版亮度条高度 80dp（触控区同高）
                     thumbColor = Color.Transparent,
-                    activeColor = Color(0xFFC8A96E) // 原版 slider_accent
+                    activeColor = Color.White // 原版 ViewLightBrightnessHr：纯白填充、无拇指
                 )
                 }
             }
@@ -1591,36 +1627,59 @@ private fun LightContent(
         // 子页覆盖层（原版跳转 Activity，此处就地覆盖展示）
         when (subPage) {
             "colorTemp" -> {
-                val kelvinDisplay = remember(minKelvin, maxKelvin, kelvinNow) {
-                    mutableStateOf(kelvinNow ?: ((minKelvin + maxKelvin) / 2f))
+                // 原版 LightColorTempActivity：percent=100（滑条顶部）= minK 暖光，
+                // 拖动中不被 HA 回写重置（原版 mIsColorTempSliding + 2s 覆盖窗口）
+                var kelvinSliding by remember { mutableStateOf(false) }
+                val kelvinDisplay = remember { mutableStateOf(kelvinNow ?: ((minKelvin + maxKelvin) / 2f)) }
+                LaunchedEffect(kelvinNow) {
+                    if (!kelvinSliding) kelvinDisplay.value = kelvinNow ?: kelvinDisplay.value
                 }
                 val kelvinThrottle = rememberValueThrottle<Float>(
                     send = { v -> viewModel.lightOn(kelvin = v.toInt()) },
                     intervalMs = 300
                 )
                 LightSubPageOverlay(onBack = { subPage = null }) {
+                    // value 反转：顶部 = minKelvin（暖光），底部 = maxKelvin（冷光）
                     VerticalValuePicker(
-                        value = kelvinDisplay.value,
+                        value = (maxKelvin + minKelvin) - kelvinDisplay.value,
                         valueRange = minKelvin..maxKelvin,
-                        topLabel = "${maxKelvin.toInt()}K",
-                        bottomLabel = "${minKelvin.toInt()}K",
+                        topLabel = "${minKelvin.toInt()}K",
+                        bottomLabel = "${maxKelvin.toInt()}K",
                         brush = Brush.verticalGradient(
-                            listOf(Color(0xFFD9F2FF), Color(0xFFFFE3B8))
+                            // 原版渐变：顶部暖 tan #F1CC8C → 底部浅奶油 #F1E5CC
+                            listOf(Color(0xFFF1CC8C), Color(0xFFF1E5CC))
                         ),
                         onDrag = { v ->
-                            kelvinDisplay.value = v
-                            kelvinThrottle.onDrag(v)
+                            kelvinSliding = true
+                            kelvinDisplay.value = (maxKelvin + minKelvin) - v
+                            kelvinThrottle.onDrag(kelvinDisplay.value)
                         },
                         onCommit = { v ->
-                            kelvinDisplay.value = v
-                            kelvinThrottle.onCommit(v)
+                            kelvinSliding = false
+                            kelvinDisplay.value = (maxKelvin + minKelvin) - v
+                            kelvinThrottle.onCommit(kelvinDisplay.value)
                         }
                     )
                 }
             }
 
             "rgb" -> {
-                val hueDisplay = remember { mutableStateOf(0f) }
+                // 原版 LightRgbActivity：初始化定位到设备当前颜色（最近色匹配），
+                // 拖动中不受 HA 回写影响（原版 isRGBSliding + 3s 覆盖窗口）
+                var rgbSliding by remember { mutableStateOf(false) }
+                val hueDisplay = remember {
+                    mutableStateOf(
+                        // hs_color 属性（HA 色相 0-100）换算 0-360，缺失从红开始
+                        stateOf(card, haStates, "hs_color")?.substringBefore(',')
+                            ?.toFloatOrNull()?.times(3.6f) ?: 0f
+                    )
+                }
+                LaunchedEffect(card, haStates) {
+                    if (!rgbSliding) {
+                        stateOf(card, haStates, "hs_color")?.substringBefore(',')
+                            ?.toFloatOrNull()?.let { hueDisplay.value = (it * 3.6f).coerceIn(0f, 360f) }
+                    }
+                }
                 val rgbThrottle = rememberValueThrottle<Float>(
                     send = { h ->
                         val rgb = android.graphics.Color.HSVToColor(floatArrayOf(h, 1f, 1f))
@@ -1646,10 +1705,12 @@ private fun LightContent(
                             }
                         ),
                         onDrag = { v ->
+                            rgbSliding = true
                             hueDisplay.value = v
                             rgbThrottle.onDrag(v)
                         },
                         onCommit = { v ->
+                            rgbSliding = false
                             hueDisplay.value = v
                             rgbThrottle.onCommit(v)
                         }
@@ -2359,9 +2420,11 @@ private fun MediaContent(
     var soundModeDialogOpen by remember { mutableStateOf(false) }
     var sourceDialogOpen by remember { mutableStateOf(false) }
 
-    // 浮动音量面板（原版 FloatingVolumeManager：3s 自动隐藏）
+    // 浮动音量面板（原版 FloatingVolumeManager：3s 无操作自动隐藏，
+    // 每次音量变化重置计时）
     var volumePanelShown by remember { mutableStateOf(false) }
-    LaunchedEffect(volumePanelShown) {
+    var volumePanelTick by remember { mutableStateOf(0) }
+    LaunchedEffect(volumePanelShown, volumePanelTick) {
         if (volumePanelShown) {
             delay(3000)
             volumePanelShown = false
@@ -2369,7 +2432,13 @@ private fun MediaContent(
     }
 
     // 音量拖动节流 100ms，松手精确下发（原版 volume_set 回调）
-    val volumeDisplay = remember(volume) { mutableStateOf(volume * 100f) }
+    val volumeDisplay = remember { mutableStateOf(volume * 100f) }
+    LaunchedEffect(volume) {
+        if (!volumeThrottleDragging) volumeDisplay.value = volume * 100f
+    }
+    // 音量拖动节流 100ms，松手精确下发（原版 volume_set 回调）。
+    // 拖动中不跟随 HA 回写（原版 "volume" 用户覆盖窗口）
+    var volumeThrottleDragging by remember { mutableStateOf(false) }
     val volumeThrottle = rememberValueThrottle<Float>(
         send = { v -> viewModel.mediaVolume(v / 100f) },
         intervalMs = 100
@@ -2558,7 +2627,9 @@ private fun MediaContent(
                 size = 55,
                 label = if (muted) "静音中" else "音量",
                 onClick = {
-                    volumePanelShown = !volumePanelShown
+                    // 原版 showFloatingVolume：只 show（面板自身 3s 消失）
+                    volumePanelTick++
+                    volumePanelShown = true
                 }
             )
         }
@@ -2578,11 +2649,15 @@ private fun MediaContent(
                 NativeSlider(
                     value = volumeDisplay.value,
                     onDrag = { v ->
+                        volumeThrottleDragging = true
                         volumeDisplay.value = v
+                        volumePanelTick++ // 原版：每次音量变化重置 3s 隐藏计时
                         volumeThrottle.onDrag(v)
                     },
                     onCommit = { v ->
+                        volumeThrottleDragging = false
                         volumeDisplay.value = v
+                        volumePanelTick++
                         volumeThrottle.onCommit(v)
                     },
                     valueRange = 0f..100f,

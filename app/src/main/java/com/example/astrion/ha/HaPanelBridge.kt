@@ -362,7 +362,15 @@ class HaPanelBridge @Inject constructor(
         val service = call.service.substringAfter('.', "")
         if (domain.isBlank() || service.isBlank()) return
         val data = buildJsonObject {
-            call.data.forEach { (key, value) -> put(key, value) }
+            call.data.forEach { (key, value) ->
+                // 逗号分隔的多数字串（如 rgb_color "r,g,b"、hs_color "h,s"）按
+                // HA schema 解析为 JSON 数组；单数字与普通字符串保持原样
+                val parts = value.split(',')
+                val numericArray = if (parts.size >= 2 && parts.all { it.trim().toIntOrNull() != null }) {
+                    buildJsonArray { parts.forEach { add(it.trim().toInt()) } }
+                } else null
+                if (numericArray != null) put(key, numericArray) else put(key, value)
+            }
         }
         val message = buildJsonObject {
             put("domain", domain)

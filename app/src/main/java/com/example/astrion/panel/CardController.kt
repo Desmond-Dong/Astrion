@@ -96,6 +96,12 @@ class CardController @Inject constructor(
                 data + ("is_volume_muted" to "false")
             )
 
+            // 原版 TvControlItem：media_player 型的 turn_on/turn_off 控制项走
+            // sendTvMediaTurnOn/TurnOff（即 media_player.turn_on/off），不是 play_pause
+            "POWER", "TURN_ON" -> haActionBus.callService("media_player.turn_on", data)
+            "TURN_OFF" -> haActionBus.callService("media_player.turn_off", data)
+            "STOP" -> haActionBus.callService("media_player.media_stop", data)
+
             else -> haActionBus.callService("media_player.media_play_pause", data)
         }
     }
@@ -303,40 +309,32 @@ class CardController @Inject constructor(
         // resolvedType（含 domain 推断）：集成生成的布局卡片可以不带 type 字段
         return when (card.resolvedType) {
             PanelCardTypes.TV -> {
-                // 原版 TV 键：音量→media_player；频道→send_command；OK 等单键
+                // 原版 TV 键：音量→media_player；频道→send_command；OK 等单键。
+                // 连发仅限原版 LongPressKeyHandler 键集 {方向/音量/频道}；其它键
+                // 长按只发一次（首触发），hold 重复不执行
+                val fire = !large || repeat == 0
                 when (keyCode) {
                     19 -> pressTvKey(card, "UP")
                     20 -> pressTvKey(card, "DOWN")
                     21 -> pressTvKey(card, "LEFT")
                     22 -> pressTvKey(card, "RIGHT")
-                    23 -> pressTvKey(card, "CENTER")
-                    4 -> {
-                        // 原版 BACK：短按发送 BACK 键；按住 2s 退出页面（长按
-                        // 首触发只退一次，后续 hold 重复不再触发）
-                        when {
-                            !large -> pressTvKey(card, "BACK")
-                            repeat == 0 -> panelUiEvents.requestBack()
-                        }
-                        true
+                    23 -> if (fire) pressTvKey(card, "CENTER")
+                    4 -> when {
+                        !large -> pressTvKey(card, "BACK")
+                        // 原版 BACK 按住 2s 退出页面（只触发一次）
+                        repeat == 0 -> panelUiEvents.requestBack()
                     }
                     24 -> pressTvKey(card, "VOLUME_UP")
                     25 -> pressTvKey(card, "VOLUME_DOWN")
-                    164 -> pressTvKey(card, "MUTE")
+                    164 -> if (fire) pressTvKey(card, "MUTE")
                     92 -> pressTvKey(card, "CHANNEL_UP")
                     93 -> pressTvKey(card, "CHANNEL_DOWN")
-                    82 -> pressTvKey(card, "MENU")
-                    132 -> pressTvKey(card, "POWER")
-                    // 原版 keyCodeToTvKey：131/136 → HOME（遥控器语音/主页键）
-                    131, 136 -> pressTvKey(card, "HOME")
+                    82 -> if (fire) pressTvKey(card, "MENU")
+                    132 -> if (fire) pressTvKey(card, "POWER")
+                    // 原版 keyCodeToTvKey：HA100 上 131 → HOME（136 仍是 F6）
+                    131 -> pressTvKey(card, "HOME")
                     // 原版 initKeyMap：134-141 = F4-F11（send_command 键名）
-                    134 -> pressTvKey(card, "F4")
-                    135 -> pressTvKey(card, "F5")
-                    136 -> pressTvKey(card, "F6")
-                    137 -> pressTvKey(card, "F7")
-                    138 -> pressTvKey(card, "F8")
-                    139 -> pressTvKey(card, "F9")
-                    140 -> pressTvKey(card, "F10")
-                    141 -> pressTvKey(card, "F11")
+                    in 134..141 -> if (fire) pressTvKey(card, "F${keyCode - 130}")
                     else -> return false
                 }
                 true
@@ -351,17 +349,30 @@ class CardController @Inject constructor(
                 val step = haStatesStore.states.value["$entityId.target_temp_step"]
                     ?.state?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 1.0
                 val delta = step + repeat * 1.0f
+                // 原版门控：canControlTemperature 排除 heat_cool（该模式走范围面板）；
+                // min/max 夹取自 min_temp/max_temp 属性
+                val isHeatCool = state == "heat_cool"
+                val minTemp = haStatesStore.states.value["$entityId.min_temp"]
+                    ?.state?.toDoubleOrNull() ?: 16.0
+                val maxTemp = haStatesStore.states.value["$entityId.max_temp"]
+                    ?.state?.toDoubleOrNull() ?: 30.0
                 when (keyCode) {
-                    24 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) + delta); true
+                    24, 25 -> {
+                        // 原版 heat_cool 下 24/25 消费但不动作；temperature 属性
+                        // 缺失不发（原版 mPendingTemp 来自设备值）
+                        if (isHeatCool || current == null) {
+                            true
+                        } else {
+                            val next = if (keyCode == 24) current + delta else current - delta
+                            climateSetTemperature(
+                                entityId, next.coerceIn(minTemp, maxTemp)
+                            )
+                            true
+                        }
                     }
 
-                    25 -> {
-                        climateSetTemperature(entityId, (current ?: 24.0) - delta); true
-                    }
-
-                    // 原版 keyControlFanSpeed：92=风速降 / 93=风速升（按上报
-                    // fan_modes 移动，到边界停住不回绕）
+                    // 原版 keyControlFanSpeed：92=风速降 / 93=风速升，
+                    // (idx+dir+size)%size 循环回绕（首尾相接）
                     92 -> {
                         shiftClimateFanMode(entityId, -1); true
                     }
@@ -378,21 +389,28 @@ class CardController @Inject constructor(
                     132 -> {
                         if (large) false
                         else {
-                            // 原版 AcControlView：关机前把当前模式存入 AcModePrefs，
-                            // 开机恢复缓存的模式（恢复时校验仍在支持列表内）
-                            if (state != "off" && state != "unavailable") {
+                            // 原版 canTogglePower：hvac_modes 含 off 才可开关；
+                            // 关机前缓存当前模式，开机恢复缓存（缺失/非法时
+                            // 回落 supportedModes 首个，仍无则不动）
+                            val supported = haStatesStore.states.value["$entityId.hvac_modes"]
+                                ?.state?.split(',')?.map { it.trim() }?.filter { it.isNotBlank() }
+                                .orEmpty()
+                            if (!supported.contains("off") || supported.none { it != "off" }) {
+                                false // 原版开关禁用：不消费
+                            } else if (state != "off" && state != "unavailable" && state != "unknown") {
                                 state?.let { acModePrefs.setCachedMode(entityId, it) }
                                 climateSetHvacMode(entityId, "off")
+                                true
                             } else {
-                                val supported = haStatesStore.states.value["$entityId.hvac_modes"]
-                                    ?.state?.split(',')?.map { it.trim() }?.filter { it.isNotBlank() }
-                                    .orEmpty()
                                 val resume = acModePrefs.getCachedMode(entityId)
                                     ?.takeIf { it != "off" && (supported.isEmpty() || it in supported) }
-                                    ?: "cool"
-                                climateSetHvacMode(entityId, resume)
+                                    ?: supported.firstOrNull { it != "off" }
+                                if (resume == null) false
+                                else {
+                                    climateSetHvacMode(entityId, resume)
+                                    true
+                                }
                             }
-                            true
                         }
                     }
 
@@ -502,14 +520,19 @@ class CardController @Inject constructor(
             }
 
             PanelCardTypes.MEDIA_PLAYER -> {
+                // 原版媒体页：23/92/93/132/164 均 UP 单发（长按忽略），
+                // 仅 24/25 长按连发音量；132 按原版 isDeviceOn 集合判定
+                val isDeviceOn =
+                    state in setOf("on", "idle", "playing", "paused", "buffering")
+                val fire = !large || repeat == 0
                 when (keyCode) {
-                    23 -> mediaTogglePlayback(entityId)
+                    23 -> if (fire) mediaTogglePlayback(entityId)
                     24 -> mediaCommand(entityId, "volume_up")
                     25 -> mediaCommand(entityId, "volume_down")
-                    92 -> mediaCommand(entityId, "media_previous_track")
-                    93 -> mediaCommand(entityId, "media_next_track")
+                    92 -> if (fire) mediaCommand(entityId, "media_previous_track")
+                    93 -> if (fire) mediaCommand(entityId, "media_next_track")
                     // 原版 setVolumeMute：静音状态取反（toggle），不是固定置 true
-                    164 -> {
+                    164 -> if (fire) {
                         val mutedNow = haStatesStore.states.value["$entityId.is_volume_muted"]
                             ?.state == "true"
                         haActionBus.callService(
@@ -517,8 +540,8 @@ class CardController @Inject constructor(
                             mapOf("entity_id" to entityId, "is_volume_muted" to (!mutedNow).toString())
                         )
                     }
-                    132 -> {
-                        if (state == "playing" || state == "paused") mediaCommand(entityId, "turn_off")
+                    132 -> if (fire) {
+                        if (isDeviceOn) mediaCommand(entityId, "turn_off")
                         else mediaCommand(entityId, "turn_on")
                     }
 
@@ -550,18 +573,18 @@ class CardController @Inject constructor(
             ?: listOf("auto", "low", "medium", "high")
 
     /**
-     * 原版 keyControlFanSpeed：风速在档位清单上按方向移动一步，到边界停住
-     * （不回绕循环）。[dir] 为 +1（升，93 键）或 -1（降，92 键）。
+     * 原版 changeFanSpeed：风速在档位清单上按方向移动一步，
+     * (idx + dir + size) % size **循环回绕**（首尾相接）。
+     * [dir] 为 +1（升，93 键）或 -1（降，92 键）。
      */
     private suspend fun shiftClimateFanMode(entityId: String, dir: Int) {
         val modes = climateFanModes(entityId)
         if (modes.isEmpty()) return
         val current = haStatesStore.states.value["$entityId.fan_mode"]?.state
         val idx = modes.indexOf(current)
-        val next = when {
-            idx < 0 -> if (dir > 0) modes.first() else modes.last()
-            else -> modes[(idx + dir).coerceIn(modes.indices)]
-        }
+        // 原版：当前不在列表时 down→0、up→末档前（idx=-1 处理）
+        val base = if (idx < 0) (if (dir > 0) -1 else 0) else idx
+        val next = modes[(base + dir + modes.size) % modes.size]
         climateSetFanMode(entityId, next)
     }
 
