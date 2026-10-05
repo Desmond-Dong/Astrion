@@ -206,35 +206,44 @@ private fun OptionPopup(
                     .fillMaxWidth()
                     .clickable(onClick = {})
             ) {
-                Column {
-                    Text(
-                        text = title,
-                        color = RemoteColors.onSurfaceVariant,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp)
-                    )
-                    options.forEach { (value, label) ->
-                        val isSelected = value == selected
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelect(value) }
-                                .padding(horizontal = 20.dp, vertical = 14.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                color = if (isSelected) RemoteColors.accent else RemoteColors.onSurface,
-                                fontSize = 18.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (isSelected) {
-                                Text(text = "✓", color = RemoteColors.accent, fontSize = 18.sp)
-                            }
+            Column {
+                // 原版 popup_ac_mode_item：60dp 行高、20dp 白字 marginStart 40、
+                // 选中对勾 30dp 右 20、项间 1dp 分隔线（左右 15、底 5）；
+                // 容器 popup_ac_mode_select_view 无标题行
+                options.forEachIndexed { index, (value, label) ->
+                    val isSelected = value == selected
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .clickable { onSelect(value) }
+                            .padding(start = 40.dp, end = 20.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (isSelected) RemoteColors.accent else RemoteColors.onSurface,
+                            fontSize = 20.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isSelected) {
+                            Text(text = "✓", color = RemoteColors.accent, fontSize = 30.sp)
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
+                    if (index < options.lastIndex) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 15.dp)
+                                .height(1.dp)
+                                .background(RemoteColors.popupLine)
+                        )
+                    }
                 }
+                Spacer(Modifier.height(10.dp))
+            }
             }
         }
     }

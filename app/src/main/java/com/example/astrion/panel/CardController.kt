@@ -490,8 +490,9 @@ class CardController @Inject constructor(
                     92, 93 -> {
                         if (!supportsTilt) false
                         else {
-                            // 93=倾斜加大 / 92=倾斜减小（对齐原版 92=降 93=升）
-                            val dir = if (keyCode == 93) 1 else -1
+                            // 原版 handleTiltKey：92=倾斜加大 / 93=倾斜减小
+                            //（注意与空调风速的 92=降/93=升 方向相反）
+                            val dir = if (keyCode == 92) 1 else -1
                             shiftCoverTilt(entityId, dir * if (large) 5 else 1)
                         }
                     }
@@ -507,10 +508,15 @@ class CardController @Inject constructor(
                     25 -> mediaCommand(entityId, "volume_down")
                     92 -> mediaCommand(entityId, "media_previous_track")
                     93 -> mediaCommand(entityId, "media_next_track")
-                    164 -> haActionBus.callService(
-                        "media_player.volume_mute",
-                        mapOf("entity_id" to entityId, "is_volume_muted" to "true")
-                    )
+                    // 原版 setVolumeMute：静音状态取反（toggle），不是固定置 true
+                    164 -> {
+                        val mutedNow = haStatesStore.states.value["$entityId.is_volume_muted"]
+                            ?.state == "true"
+                        haActionBus.callService(
+                            "media_player.volume_mute",
+                            mapOf("entity_id" to entityId, "is_volume_muted" to (!mutedNow).toString())
+                        )
+                    }
                     132 -> {
                         if (state == "playing" || state == "paused") mediaCommand(entityId, "turn_off")
                         else mediaCommand(entityId, "turn_on")

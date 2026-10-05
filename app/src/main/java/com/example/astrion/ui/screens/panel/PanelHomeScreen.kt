@@ -463,10 +463,35 @@ private fun RoomDeviceList(
         verticalArrangement = Arrangement.spacedBy(15.dp)
     ) {
         uniqueCards.forEach { card ->
+            val entityId = card.primaryEntity?.entityId
+            // 原版各卡片底部信息行：AC=温度+模式、灯光=亮度%、音乐=音量%
+            val bottomInfo = when (card.resolvedType) {
+                PanelCardTypes.CLIMATE -> {
+                    val temp = entityId
+                        ?.let { haStates["$it.temperature"]?.state }
+                        ?.trim()?.removeSuffix(".0")
+                    val mode = entityId
+                        ?.let { haStates[it]?.state }
+                        ?.let { acModeLabel(it) }
+                    listOfNotNull(temp?.let { "$it℃" }, mode).joinToString(" · ")
+                        .ifBlank { null }
+                }
+
+                PanelCardTypes.LIGHT -> entityId
+                    ?.let { haStates["$it.brightness"]?.state?.toFloatOrNull() }
+                    ?.let { "亮度 ${((it / 2.55f).toInt().coerceIn(0, 100))}%" }
+
+                PanelCardTypes.MEDIA_PLAYER -> entityId
+                    ?.let { haStates["$it.volume_level"]?.state?.toFloatOrNull() }
+                    ?.let { "音量 ${((it * 100).toInt().coerceIn(0, 100))}%" }
+
+                else -> null
+            }
             DeviceCard(
                 card = card,
                 name = card.displayName(haStates),
                 stateText = cardStateText(card, haStates),
+                bottomInfo = bottomInfo,
                 isBlind = card.primaryEntity?.entityId
                     ?.let { haStates["$it.current_tilt_position"] != null } == true,
                 emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
@@ -482,17 +507,31 @@ private fun RoomDeviceList(
     }
 }
 
+/** 空调模式中文标签（原版 HvacAndPresetMode.getLanguageString 简表）。 */
+private fun acModeLabel(state: String): String = when (state) {
+    "off" -> "关机"
+    "auto" -> "自动"
+    "cool" -> "制冷"
+    "heat" -> "制热"
+    "dry" -> "除湿"
+    "fan_only" -> "送风"
+    "heat_cool" -> "智能"
+    else -> state
+}
+
 @Composable
 private fun DeviceCard(
     card: PanelCard,
     name: String,
     stateText: String,
+    bottomInfo: String? = null,
     isBlind: Boolean = false,
     emoji: String? = null,
     onClick: () -> Unit,
 ) {
     // 原版 index_device_*_item：无卡片盒子，居中 50dp 原版彩色状态图标
-    // (alpha 0.8) + 下方 #BFBDBD 名称 + 左侧 4dp 白点表示开机。
+    // (alpha 0.8) + 下方 #BFBDBD 名称 + 左侧 4dp 白点表示开机 + 右上竖三点
+    // 信息入口 + 底部信息行（AC 温度/模式、灯光亮度%、音乐音量%）。
     // 天气卡片用 emoji 实况图标替代图标位，状态行显示 温度·天气。
     // 百叶窗（cover 带 current_tilt_position）用原版 blind 专属图标；
     // 卡片可配 hide_name/hide_icon 隐藏名称/图标（原版 list_elements）。
@@ -543,6 +582,14 @@ private fun DeviceCard(
                     modifier = Modifier.height(40.dp)
                 )
             }
+            // 原版 tvDeviceOffLine：位于图标+名称块下方（非覆盖中心）
+            if (isOffline) {
+                Text(
+                    text = "设备已离线",
+                    color = Color(0xFFBFBDBD),
+                    fontSize = 15.sp
+                )
+            }
             if (card.resolvedType == PanelCardTypes.WEATHER && !isOffline) {
                 Text(
                     text = stateText,
@@ -561,26 +608,25 @@ private fun DeviceCard(
                     .background(Color.White, CircleShape)
             )
         }
-        if (isOffline) {
+        // 原版右上角竖三点信息入口（incDeviceDetail：marginTop 5 / marginEnd 8）
+        Text(
+            text = "⋮",
+            color = Color(0xFFBFBDBD),
+            fontSize = 20.sp,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 5.dp, end = 8.dp)
+        )
+        if (bottomInfo != null && !isOffline) {
+            // 原版底部信息行：30dp 高、marginBottom 8 / marginEnd 15、10sp
             Text(
-                text = "设备已离线",
+                text = bottomInfo,
                 color = Color(0xFFBFBDBD),
-                fontSize = 15.sp,
-                modifier = Modifier.align(Alignment.Center)
-            )
-        }
-        if (card.resolvedType == PanelCardTypes.LIGHT) {
-            Row(
+                fontSize = 10.sp,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(bottom = 8.dp, end = 15.dp)
-                    .clickable(onClick = onClick),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = "亮度", color = Color(0xFFBFBDBD), fontSize = 10.sp)
-                Spacer(Modifier.width(4.dp))
-                Text(text = "色温", color = Color(0xFFBFBDBD), fontSize = 10.sp)
-            }
+            )
         }
     }
 }
