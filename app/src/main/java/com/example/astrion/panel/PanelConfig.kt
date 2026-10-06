@@ -162,6 +162,12 @@ data class PanelCard(
     @SerialName("hide_name") val hideName: Boolean = false,
     /** 原版 TvCardAttributes list_elements.icon：首页卡片隐藏图标。 */
     @SerialName("hide_icon") val hideIcon: Boolean = false,
+    /** 原版 curtain_interface_type：blind=百叶窗（集成 cover 子条目 curtain_type 下发）。 */
+    @SerialName("curtain_type") val curtainType: String = "",
+    /** 原版 SceneCardAttributes mode：immediate/delayed/popup（集成 scene 子条目下发）。 */
+    val mode: String = "",
+    /** 原版 switch_monitor 统计范围（集成 device_types 下发，域名字符串）。 */
+    @SerialName("device_types") val deviceTypes: List<String> = emptyList(),
     val entities: List<PanelEntityRef> = emptyList(),
 ) {
     /**

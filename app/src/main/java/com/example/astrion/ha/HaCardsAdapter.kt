@@ -60,12 +60,58 @@ object HaCardsAdapter {
                         .forEach { remoteMap.putIfAbsent(it, name) }
                 }
 
-                "scene", "weather", "host" -> {
-                    // These categories carry entity lists in config instead of devices.
+                // 监控开关卡：原版 MonitorSwitchItem（三分区计数 + 全关），
+                // 统计范围来自 config.device_types
+                "switch_monitor" -> boundEntities.distinct().forEach { entityId ->
+                    room.cards += PanelCard(
+                        type = PanelCardTypes.SWITCH_MONITOR,
+                        entities = listOf(PanelEntityRef(entityId = entityId)),
+                        deviceTypes = (config["device_types"] as? JsonArray)
+                            ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                            .orEmpty()
+                    )
+                }
+
+                "scene" -> {
+                    // 场景卡带执行模式（原版 SceneCardAttributes.mode）
+                    val mode = config.str("mode").orEmpty()
+                    val entities =
+                        (config["entities"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                            ?: emptyList()
+                    entities.distinct().forEach {
+                        room.cards += PanelCard(
+                            entities = listOf(PanelEntityRef(entityId = it)),
+                            mode = mode
+                        )
+                    }
+                }
+
+                "weather" -> {
                     val entities =
                         (config["entities"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }
                             ?: emptyList()
                     entities.distinct().forEach { room.cards += simpleCard(it) }
+                }
+
+                // 主机卡：实体域不定（原版 host 页），显式类型防止被 domain 推断吞掉
+                "host" -> {
+                    val entities =
+                        (config["entities"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                            ?: emptyList()
+                    entities.distinct().forEach {
+                        room.cards += PanelCard(
+                            type = PanelCardTypes.HOST,
+                            entities = listOf(PanelEntityRef(entityId = it))
+                        )
+                    }
+                }
+
+                // 窗帘卡：curtain_type=blind 为百叶窗（原版 curtain_interface_type）
+                "cover" -> boundEntities.distinct().forEach {
+                    room.cards += PanelCard(
+                        entities = listOf(PanelEntityRef(entityId = it)),
+                        curtainType = config.str("curtain_type").orEmpty()
+                    )
                 }
 
                 else -> boundEntities.distinct().forEach { room.cards += simpleCard(it) }

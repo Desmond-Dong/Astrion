@@ -137,11 +137,16 @@ class PanelViewModel @Inject constructor(
         }
     }
 
-    /** 原版监控开关卡全关（keyOpenALLCloseSelectList）：对一类设备逐个发关闭。 */
+    /** 原版监控开关卡全关（keyOpenALLCloseSelectList）：对一类设备逐个发关闭。
+     *  范围按集成 device_types 限定（域名字符串）。 */
     fun allOff(monitor: PanelCard, type: String) {
-        // 监控卡所在布局中的同类设备（简化：全布局同类）
+        val wantedDomains = type.substringBefore('.') // 全关目标域（light/switch/climate）
         val entities = layout.value.rooms.flatMap { it.cards }
-            .filter { it.resolvedType == type }
+            .filter { c ->
+                val domain = c.primaryEntity?.entityId?.substringBefore('.')
+                domain == wantedDomains &&
+                    (monitor.deviceTypes.isEmpty() || domain in monitor.deviceTypes)
+            }
             .mapNotNull { it.primaryEntity?.entityId }
         viewModelScope.launch {
             entities.forEach { entityId ->
@@ -542,17 +547,25 @@ private fun RoomDeviceList(
                     ?.let { haStates["$it.volume_level"]?.state?.toFloatOrNull() }
                     ?.let { "音量 ${((it * 100).toInt().coerceIn(0, 100))}%" }
 
-                // 原版监控开关卡三分区计数（StatisticsDevice isShowAc/Light/Switch）
+                // 原版监控开关卡三分区计数（StatisticsDevice isShowAc/Light/Switch，
+                // 范围按集成 device_types 过滤）
                 PanelCardTypes.SWITCH_MONITOR -> {
-                    fun onCount(type: String) = uniqueCards.count {
-                        it.resolvedType == type && it.primaryEntity?.entityId
-                            ?.let { id -> haStates[id]?.state } == "on"
+                    val shown = card.deviceTypes.ifEmpty {
+                        listOf("climate", "light", "switch")
                     }
-                    listOf(
-                        "空调 ${onCount(PanelCardTypes.CLIMATE)}",
-                        "灯 ${onCount(PanelCardTypes.LIGHT)}",
-                        "开关 ${onCount(PanelCardTypes.SWITCH)}"
-                    ).joinToString("  ")
+                    fun onCount(domain: String) = uniqueCards.count {
+                        it.primaryEntity?.entityId?.substringBefore('.') == domain &&
+                            it.primaryEntity?.entityId?.let { id -> haStates[id]?.state } == "on"
+                    }
+                    shown.mapNotNull { domain ->
+                        val label = when (domain) {
+                            "climate" -> "空调"
+                            "light" -> "灯"
+                            "switch" -> "开关"
+                            else -> return@mapNotNull null
+                        }
+                        "${label} ${onCount(domain)}"
+                    }.joinToString("  ").ifBlank { null }
                 }
 
                 else -> null
@@ -570,14 +583,59 @@ private fun RoomDeviceList(
                     sceneExecuted = false
                 }
             }
+            // 原版 delayed 模式：3s 倒计时（触摸/按键取消），走完才执行
+            var sceneCountdown by remember(card.cardId) { mutableStateOf<Int?>(null) }
+            LaunchedEffect(sceneCountdown) {
+                var left = sceneCountdown ?: return@LaunchedEffect
+                while (left > 0) {
+                    delay(1000)
+                    left -= 1
+                    sceneCountdown = left
+                }
+                if (left == 0 && sceneCountdown != null) {
+                    sceneCountdown = null
+                    onExecuteScene(card) { sceneExecuted = true }
+                }
+            }
+            // 原版 popup 模式：确认弹窗
+            var sceneConfirm by remember(card.cardId) { mutableStateOf(false) }
+            if (sceneConfirm) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { sceneConfirm = false },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            sceneConfirm = false
+                            onExecuteScene(card) { sceneExecuted = true }
+                        }) { Text("执行", color = RemoteColors.accent) }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { sceneConfirm = false }) {
+                            Text("取消", color = RemoteColors.onSurfaceVariant)
+                        }
+                    },
+                    containerColor = RemoteColors.popupBackground,
+                    title = {
+                        Text(
+                            text = "是否执行\"${card.displayName(haStates)}\"场景？",
+                            color = RemoteColors.onSurface,
+                            fontSize = 16.sp
+                        )
+                    }
+                )
+            }
+            // 原版 delayed 模式的 3s 进度反馈（卡片中央倒计时）
+            val countdownText = sceneCountdown?.takeIf { it > 0 }
             DeviceCard(
                 card = card,
                 name = card.displayName(haStates),
                 stateText = cardStateText(card, haStates),
                 primaryState = entityId?.let { haStates[it]?.state } ?: "",
                 bottomInfo = bottomInfo,
-                isBlind = card.primaryEntity?.entityId
-                    ?.let { haStates["$it.current_tilt_position"] != null } == true,
+                isBlind = card.curtainType == "blind" ||
+                    // 集成未配置时按 tilt 能力兜底
+                    (card.curtainType.isBlank() && card.primaryEntity?.entityId
+                        ?.let { haStates["$it.current_tilt_position"] != null } == true),
+                countdownText = countdownText,
                 sceneExecuted = sceneExecuted,
                 emoji = if (card.resolvedType == PanelCardTypes.WEATHER) {
                     card.primaryEntity?.entityId
@@ -596,10 +654,21 @@ private fun RoomDeviceList(
                             card.resolvedType == PanelCardTypes.SWITCH ->
                             onTogglePower(card)
 
-                        card.resolvedType == PanelCardTypes.SCENE ->
-                            onExecuteScene(card) {
+                        // 原版 executeByMode：immediate（缺省）立即执行 /
+                        // delayed 3s 倒计时（触摸取消）/ popup 确认弹窗
+                        card.resolvedType == PanelCardTypes.SCENE -> when (card.mode) {
+                            "delayed" -> {
+                                if (sceneCountdown == null) sceneCountdown = 3 else {
+                                    sceneCountdown = null // 再点=取消（原版触摸取消）
+                                }
+                            }
+
+                            "popup" -> sceneConfirm = true
+
+                            else -> onExecuteScene(card) {
                                 sceneExecuted = true // 原版 cSExecute 成功动画 2s
                             }
+                        }
 
                         else -> onOpenCard(card)
                     }
@@ -626,16 +695,21 @@ private fun AllOffDialog(
     onAllOff: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 各类别在当前布局中的设备（点击发全关）
-    fun entitiesOf(type: String) = cards.filter { it.resolvedType == type }
-        .mapNotNull { it.primaryEntity?.entityId }
+    // 各类别在当前布局中的设备（点击发全关）；范围按集成 device_types 限定
+    //（域名字符串：light/switch/climate…），未配置时默认三类
+    val wanted = monitor.deviceTypes.ifEmpty { listOf("light", "switch", "climate") }
+    fun entitiesOf(domain: String) = cards.filter {
+        it.primaryEntity?.entityId?.substringBefore('.') == domain
+    }.mapNotNull { it.primaryEntity?.entityId }
     val options = buildList {
-        if (entitiesOf(PanelCardTypes.LIGHT).isNotEmpty())
-            add("灯全部关闭" to PanelCardTypes.LIGHT)
-        if (entitiesOf(PanelCardTypes.SWITCH).isNotEmpty())
-            add("开关全部关闭" to PanelCardTypes.SWITCH)
-        if (entitiesOf(PanelCardTypes.CLIMATE).isNotEmpty())
-            add("空调全部关闭" to PanelCardTypes.CLIMATE)
+        wanted.forEach { domain ->
+            if (entitiesOf(domain).isEmpty()) return@forEach
+            when (domain) {
+                "light" -> add("灯全部关闭" to "light")
+                "switch" -> add("开关全部关闭" to "switch")
+                "climate" -> add("空调全部关闭" to "climate")
+            }
+        }
     }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
@@ -689,6 +763,7 @@ private fun DeviceCard(
     bottomInfo: String? = null,
     isBlind: Boolean = false,
     sceneExecuted: Boolean = false,
+    countdownText: Int? = null,
     emoji: String? = null,
     onClick: () -> Unit,
     onDotsClick: (() -> Unit)? = null,
@@ -815,6 +890,16 @@ private fun DeviceCard(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 4.dp, end = 10.dp)
+            )
+        }
+        // 原版 delayed 模式：卡片中央倒计时（进度条语义简化为数字）
+        if (countdownText != null) {
+            Text(
+                text = "$countdownText",
+                color = Color.White,
+                fontSize = 44.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Center)
             )
         }
         if (bottomInfo != null && !isOffline) {
