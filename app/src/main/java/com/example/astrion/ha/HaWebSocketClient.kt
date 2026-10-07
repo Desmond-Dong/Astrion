@@ -54,7 +54,7 @@ class HaWebSocketClient(
         data class Event(val eventType: String, val data: JsonObject)
     }
 
-    /** Assist 管线运行事件（run-start/stt-start/vad-end/stt-end/intent-end/tts-*/error/run-end）。 */
+    /** Assist 管线运行事件（run-start、stt-start、vad-end、stt-end、intent-end、tts、error、run-end）。 */
     data class AssistEvent(val type: String, val data: JsonObject)
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
