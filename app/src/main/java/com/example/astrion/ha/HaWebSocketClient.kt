@@ -25,6 +25,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
+import okio.ByteString
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket

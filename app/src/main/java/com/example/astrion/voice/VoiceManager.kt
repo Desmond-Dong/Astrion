@@ -193,7 +193,7 @@ class VoiceManager @Inject constructor(
             bridge.binary.collect { frame ->
                 when {
                     frame.size == 1 && frame[0].toInt() == TTS_PREFIX_END -> playTts()
-                    frame.isNotEmpty && frame[0].toInt() == TTS_PREFIX_DATA ->
+                    frame.isNotEmpty() && frame[0].toInt() == TTS_PREFIX_DATA ->
                         ttsBuffer.write(frame, 1, frame.size - 1)
                 }
             }
@@ -237,20 +237,11 @@ class VoiceManager @Inject constructor(
 
     private fun playBytes(mp3: ByteArray) {
         try {
+            val tmp = java.io.File(context.cacheDir, "assist_tts.mp3")
+            tmp.writeBytes(mp3)
             mediaPlayer.reset()
             mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC) // 语音一律外放
-            mediaPlayer.setDataSource(object : MediaDataSource() {
-                override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
-                    if (position >= mp3.size) return -1
-                    val n = minOf(size, mp3.size - position.toInt())
-                    System.arraycopy(mp3, position.toInt(), buffer, offset, n)
-                    return n
-                }
-
-                override fun size(): Long = mp3.size.toLong()
-
-                override fun close() {}
-            })
+            mediaPlayer.setDataSource(tmp.absolutePath)
             mediaPlayer.prepare()
             mediaPlayer.start()
             scope.launch {
@@ -300,12 +291,10 @@ class VoiceManager @Inject constructor(
 
                     Mode.Wake -> {
                         if (settingsStore.micMuted.get()) continue
-                        val detected = wakeWordEngine?.detect(
-                            ByteBuffer.wrap(ShortArray(n) { pcm[it] }.let {
-                                ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN)
-                                    .asShortBuffer().put(it).array()
-                            })
-                        ).orEmpty()
+                        val byteBuf = ByteArray(n * 2)
+                        ByteBuffer.wrap(byteBuf).order(ByteOrder.LITTLE_ENDIAN)
+                            .asShortBuffer().put(pcm, 0, n)
+                        val detected = wakeWordEngine?.detect(ByteBuffer.wrap(byteBuf)).orEmpty()
                         if (detected.isNotEmpty() && _state.value is VoiceState.Idle) {
                             Timber.i("Wake word detected: %s", detected)
                             startSession()
