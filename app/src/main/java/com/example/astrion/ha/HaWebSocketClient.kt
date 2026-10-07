@@ -110,7 +110,7 @@ class HaWebSocketClient(
             messages.trySend(text)
         }
 
-        override fun onMessage(webSocket: WebSocket, bytes: okhttp3.ByteString) {
+        override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
             _binary.tryEmit(bytes.toByteArray())
         }
 
