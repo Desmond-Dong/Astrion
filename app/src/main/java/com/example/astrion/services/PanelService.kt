@@ -36,6 +36,9 @@ class PanelService : LifecycleService() {
     lateinit var connectionSettingsStore: com.example.astrion.ha.HaConnectionSettingsStore
 
     @Inject
+    lateinit var voiceManager: com.example.astrion.voice.VoiceManager
+
+    @Inject
     lateinit var raiseToWakeController: RaiseToWakeController
 
     private val wifiWakeLock = WifiWakeLock()
@@ -55,6 +58,8 @@ class PanelService : LifecycleService() {
         // Raise to wake (§3.8) follows the display settings threshold while
         // the always-on service runs.
         raiseToWakeController.start(lifecycleScope)
+        // 语音：唤醒词常驻监听 + Assist 管线（麦克风键/唤醒词共用会话）
+        voiceManager.startWakeLoop()
     }
 
     /**

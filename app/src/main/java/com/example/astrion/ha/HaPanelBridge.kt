@@ -354,6 +354,27 @@ class HaPanelBridge @Inject constructor(
         return entries
     }
 
+    // ── Assist 管线（语音）转发 ──────────────────────────────────────────
+
+    /** 发送 Assist 管线命令（即发即忘，事件经 [ws] 的 assistEvents 回流）。 */
+    fun sendAssistCommand(command: kotlinx.serialization.json.JsonObject) {
+        client?.sendNow("assist_pipeline/run", command)
+    }
+
+    /** 发送音频二进制帧（首字节 = stt_binary_handler_id）。 */
+    fun sendAssistBinary(bytes: ByteArray) {
+        client?.sendBinary(bytes)
+    }
+
+    /** Assist 管线运行事件。 */
+    val assistEvents: kotlinx.coroutines.flow.SharedFlow<com.example.astrion.ha.HaWebSocketClient.AssistEvent>
+        get() = client?.assistEvents
+            ?: kotlinx.coroutines.flow.MutableSharedFlow()
+
+    /** HA 下发的二进制帧（TTS 音频）。 */
+    val binary: kotlinx.coroutines.flow.SharedFlow<ByteArray>
+        get() = client?.binary ?: kotlinx.coroutines.flow.MutableSharedFlow()
+
     // ── HA service calls ────────────────────────────────────────────────
 
     private suspend fun sendServiceCall(call: com.example.astrion.services.HaServiceCall) {

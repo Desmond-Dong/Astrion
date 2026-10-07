@@ -67,6 +67,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":microfeatures"))
+    implementation(libs.litert)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

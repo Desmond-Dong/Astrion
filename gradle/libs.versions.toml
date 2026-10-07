@@ -1,4 +1,5 @@
 [versions]
+litert = "1.4.1"
 agp = "8.12.3"
 datastore = "1.2.0"
 hiltAndroid = "2.58"
@@ -24,6 +25,7 @@ documentfile = "1.1.0"
 timber = "5.0.1"
 
 [libraries]
+litert = { module = "com.google.ai.edge.litert:litert", version.ref = "litert" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-datastore = { module = "androidx.datastore:datastore", version.ref = "datastore" }
 androidx-hilt-lifecycle-viewmodel = { module = "androidx.hilt:hilt-lifecycle-viewmodel", version.ref = "hiltLifecycleViewmodel" }

@@ -54,6 +54,9 @@ class HaWebSocketClient(
         data class Event(val eventType: String, val data: JsonObject)
     }
 
+    /** Assist 管线运行事件（run-start/stt-start/vad-end/stt-end/intent-end/tts-*/error/run-end）。 */
+    data class AssistEvent(val type: String, val data: JsonObject)
+
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     private val _state = MutableStateFlow<HaConnectionState>(HaConnectionState.Disconnected)
@@ -65,6 +68,27 @@ class HaWebSocketClient(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val incoming: SharedFlow<Incoming.Event> = _incoming.asSharedFlow()
+
+    /**
+     * Binary frames from Home Assistant（Assist 管线 TTS 音频：首字节 0x01 +
+     * mp3 数据；仅 0xFE = TTS 结束）。由 [com.example.astrion.voice.VoiceManager]
+     * 消费。
+     */
+    private val _binary = MutableSharedFlow<ByteArray>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val binary: SharedFlow<ByteArray> = _binary.asSharedFlow()
+
+    private val _assistEvents = MutableSharedFlow<AssistEvent>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    /** Assist 管线事件流（与 [binary] 同源，供 [com.example.astrion.voice.VoiceManager] 消费）。 */
+    val assistEvents: SharedFlow<AssistEvent> = _assistEvents.asSharedFlow()
 
     private val okHttpClient = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
@@ -85,6 +109,10 @@ class HaWebSocketClient(
             messages.trySend(text)
         }
 
+        override fun onMessage(webSocket: WebSocket, bytes: okhttp3.ByteString) {
+            _binary.tryEmit(bytes.toByteArray())
+        }
+
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             Timber.d(t, "HA WebSocket failed")
             messages.trySend(CLOSED_SENTINEL)
@@ -94,6 +122,13 @@ class HaWebSocketClient(
             messages.trySend(CLOSED_SENTINEL)
         }
     }
+
+    /**
+     * 发送二进制帧（Assist 管线音频上行：首字节 = stt_binary_handler_id +
+     * PCM 数据；仅 [handlerId] 字节 = 音频流结束）。
+     */
+    fun sendBinary(bytes: ByteArray): Boolean =
+        webSocket?.send(okio.ByteString.of(*bytes)) ?: false
 
     fun connect() {
         if (running) return
@@ -228,9 +263,17 @@ class HaWebSocketClient(
 
                 "event" -> {
                     val event = obj["event"] as? JsonObject ?: continue
-                    val eventType = event["event_type"]?.jsonPrimitive?.contentOrNull ?: continue
+                    val eventType = event["event_type"]?.jsonPrimitive?.contentOrNull
                     val data = event["data"] as? JsonObject ?: JsonObject(emptyMap())
-                    _incoming.tryEmit(Incoming.Event(eventType, data))
+                    if (eventType != null) {
+                        _incoming.tryEmit(Incoming.Event(eventType, data))
+                    } else {
+                        // Assist 管线事件：{"type":"run-start","data":{...}}（无 event_type 键）
+                        val assistType = event["type"]?.jsonPrimitive?.contentOrNull
+                        if (assistType != null) {
+                            _assistEvents.tryEmit(AssistEvent(assistType, data))
+                        }
+                    }
                 }
             }
         }

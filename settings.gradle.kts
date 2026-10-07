@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Astrion"
 include(":app")
+include(":microfeatures")

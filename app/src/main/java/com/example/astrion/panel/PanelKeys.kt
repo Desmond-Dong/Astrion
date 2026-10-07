@@ -54,6 +54,7 @@ class KeyRouter @Inject constructor(
     private val keyBindingExecutor: KeyBindingExecutor,
     private val eventHub: PanelEventHub,
     private val panelUiEvents: PanelUiEvents,
+    private val voiceManager: com.example.astrion.voice.VoiceManager,
     @ApplicationContext private val context: Context
 ) {
     // 原版 BaseActivity：页面进入注册按键监听、离开注销，栈顶优先。
@@ -81,6 +82,12 @@ class KeyRouter @Inject constructor(
         // Every physical key is reported to Home Assistant so automations can
         // see (and bind) any key, even when the panel itself ignores it.
         eventHub.announceKeyPressed(press.keyCode, press.longPress)
+        // 语音键（HA100=133，原版 BaseActivity）：单击开始说话，说完 HA 侧
+        // VAD 自动断句；会话中再按=打断
+        if (press.keyCode == 133 && !press.longPress) {
+            voiceManager.toggleFromMicKey()
+            return true
+        }
         // 返回键：离开设备详情页回到上一级
         if (press.keyCode == KEY_BACK) {
             if (handlers.isNotEmpty()) panelUiEvents.requestBack()
