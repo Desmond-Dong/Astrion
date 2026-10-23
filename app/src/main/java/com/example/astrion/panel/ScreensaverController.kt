@@ -24,14 +24,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Drives the appliance screensaver (§3.10.7): after `screen_saver_timeout`
- * seconds without a key or touch, the full-screen idle overlay (clock, date,
- * battery, HA link) takes over, mirroring the original ScreenSaverDialog.
- * Any key or touch dismisses it.
+ * Drives the appliance screensaver (§3.10.7). Faithful to the original
+ * ScreenSaverService: the true 息屏 is performed by the SYSTEM — we write
+ * `Settings.System.SCREEN_OFF_TIMEOUT` and the OS powers the backlight down
+ * completely (zero glow). Charging always-on mode writes the max timeout so
+ * the panel stays lit on the dock (original `setSystemScreenTimeout(2147483647)`).
  *
- * While charging the user chooses the idle behaviour (§3.10.7 充电时常亮):
- * keep the screensaver (default) or black the display out — true sleep when
- * the platform permits, a pure-black overlay otherwise.
+ * When the platform refuses the settings write, the controller degrades to
+ * the in-app path: instant power-sleep reflection, otherwise a dimmed black
+ * overlay (brightness 1). The clock overlay itself only appears in the
+ * user-selected 充电屏保 mode.
  *
  * The controller outlives the activity so the idle clock keeps running across
  * recreation; the idle loop is started from [com.example.astrion.MainActivity].
@@ -52,7 +54,7 @@ class ScreensaverController @Inject constructor(
 
     private val _screenOff = MutableStateFlow(false)
 
-    /** True while the display should be blacked out (charging + 熄屏). */
+    /** True while the fallback black overlay should cover the UI. */
     val screenOff: StateFlow<Boolean> = _screenOff.asStateFlow()
 
     private val _charging = MutableStateFlow(false)
@@ -74,6 +76,10 @@ class ScreensaverController @Inject constructor(
     @Volatile
     private var chargingNow = false
 
+    /** True when the OS accepted our SCREEN_OFF_TIMEOUT write (true息屏 path). */
+    @Volatile
+    private var systemTimeoutWriteOk = false
+
     /** System brightness before the screen-off dim, restored on wake. */
     private var previousBrightness = 0
 
@@ -84,17 +90,18 @@ class ScreensaverController @Inject constructor(
     private var flashJob: Job? = null
 
     /**
-     * Starts the idle poll loop and keeps the configured timeout in sync with
-     * the HA number entity. Idempotent.
+     * Starts the idle poll loop, mirrors the configured timeout into the
+     * system screen-off setting and tracks charging state from the OS
+     * battery broadcasts. Idempotent.
      */
     fun start() {
         if (loopStarted) return
         loopStarted = true
         displaySettingsStore.screenSaverTimeout
-            .onEach { timeoutSeconds = it }
+            .onEach { timeoutSeconds = it; applySystemTimeout() }
             .launchIn(scope)
         displaySettingsStore.chargingDisplay
-            .onEach { chargingScreenOff = it == DisplaySettings.CHARGING_SCREEN_OFF }
+            .onEach { chargingScreenOff = it == DisplaySettings.CHARGING_SCREEN_OFF; applySystemTimeout() }
             .launchIn(scope)
         scope.launch {
             while (isActive) {
@@ -102,6 +109,8 @@ class ScreensaverController @Inject constructor(
                 tick()
             }
         }
+        registerBatteryReceiver()
+        applySystemTimeout()
     }
 
     /** Records user interaction; dismisses the screensaver when showing. */
@@ -123,6 +132,8 @@ class ScreensaverController @Inject constructor(
         _charging.value = value
         Timber.d("Charging state changed: $value (mode=${if (chargingScreenOff) "熄屏" else "屏保"})")
         chargingNow = value
+        // 原版：充电常亮写 MAX 熄屏时间，拔出恢复 DisplaySettings/Screen_Off_Timeout
+        applySystemTimeout()
         if (!value) endScreenOff()
     }
 
@@ -141,6 +152,27 @@ class ScreensaverController @Inject constructor(
         val timeout = timeoutSeconds
         val idleMs = SystemClock.elapsedRealtime() - lastInteractionRealtimeMs
         val idleReached = timeout > 0 && idleMs >= timeout * 1000L
+
+        // 系统息屏路径：写好 SCREEN_OFF_TIMEOUT 后由系统关背光（真灭屏，无余光），
+        // 这里只负责充电屏保模式的时钟 overlay 以及旧路径兜底。
+        if (systemTimeoutWriteOk) {
+            if (!idleReached) {
+                if (_active.value) _active.value = false
+                endScreenOff()
+                return
+            }
+            if (chargingNow && !chargingScreenOff) {
+                // 充电 + 屏保：常亮，显示时钟
+                if (!_screenOff.value && !_active.value) {
+                    Timber.d("Screensaver shown after ${idleMs}ms idle")
+                    _active.value = true
+                }
+            } else {
+                // 其余情况交给系统熄屏（已写入对应超时），应用内不再显示任何覆盖
+                if (_active.value) _active.value = false
+            }
+            return
+        }
 
         // 充电熄屏模式：空闲即熄（屏保已显示时也允许切到熄屏）
         if (chargingNow && chargingScreenOff) {
@@ -166,6 +198,54 @@ class ScreensaverController @Inject constructor(
         if (_active.value) return
         Timber.d("Screensaver shown after ${idleMs}ms idle")
         _active.value = true
+    }
+
+    /**
+     * Mirrors the settings into `Settings.System.SCREEN_OFF_TIMEOUT` — the
+     * original mechanism for the true display-off (zero backlight). 息屏常亮
+     * (charging+屏保) and user's never both write the max value.
+     */
+    private fun applySystemTimeout() {
+        val millis = when {
+            chargingNow && !chargingScreenOff -> NEVER_TIMEOUT_MS
+            timeoutSeconds <= 0 -> NEVER_TIMEOUT_MS
+            else -> timeoutSeconds * 1000L
+        }
+        val ok = runCatching {
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.SCREEN_OFF_TIMEOUT,
+                millis.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            )
+            Settings.System.getInt(
+                context.contentResolver, Settings.System.SCREEN_OFF_TIMEOUT
+            ) >= 0
+        }.getOrDefault(false)
+        if (ok != systemTimeoutWriteOk) {
+            Timber.d("System screen-off timeout write: ${if (ok) "OK" else "denied"}")
+        }
+        systemTimeoutWriteOk = ok
+    }
+
+    /** Battery monitor so charging state also updates while no UI is composed. */
+    private fun registerBatteryReceiver() {
+        runCatching {
+            context.registerReceiver(
+                object : BroadcastReceiver() {
+                    override fun onReceive(receiveContext: Context?, intent: Intent?) {
+                        intent ?: return
+                        val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+                        setCharging(
+                            status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                                    status == BatteryManager.BATTERY_STATUS_FULL ||
+                                    plugged != 0
+                        )
+                    }
+                },
+                IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            )
+        }.onFailure { Timber.w(it, "Battery receiver registration failed") }
     }
 
     /** Blacks the display out and dims the backlight so it reads as 熄屏. */
@@ -217,5 +297,8 @@ class ScreensaverController @Inject constructor(
 
         /** Backlight floor while the charging screen-off overlay is up. */
         const val SCREEN_OFF_BRIGHTNESS = 1
+
+        /** Original 息屏常亮/不熄屏 value: system timeout = Int.MAX ms. */
+        const val NEVER_TIMEOUT_MS = Int.MAX_VALUE - 1L
     }
 }
