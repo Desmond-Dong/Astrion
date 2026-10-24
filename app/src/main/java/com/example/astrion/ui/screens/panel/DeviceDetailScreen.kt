@@ -2816,7 +2816,7 @@ private fun WeatherContent(
     val windSpeedUnit = stateOf(card, haStates, "wind_speed_unit") ?: "km/h"
     val pressure = stateOf(card, haStates, "pressure")
     val pressureUnit = stateOf(card, haStates, "pressure_unit") ?: "hPa"
-    val windBearing = stateOf(card, haStates, "wind_bearing")?.toIntOrNull()
+    val windBearing = stateOf(card, haStates, "wind_bearing")
 
     // 预报：走 HA 标准 weather/get_forecasts，不支持时整块隐藏
     var forecast by remember { mutableStateOf<List<com.example.astrion.ha.HaWeatherForecast>?>(null) }
@@ -2948,7 +2948,7 @@ private fun WeatherContent(
 private fun WeatherInfoTile(label: String, value: String?) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = value ?: "--",
+            text = value?.takeIf { it.isNotBlank() } ?: "--",
             color = RemoteColors.onSurface,
             fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold

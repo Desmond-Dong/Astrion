@@ -434,8 +434,17 @@ class HaPanelBridge @Inject constructor(
             "weather/get_forecasts",
             buildJsonObject { put("entity_id", entityId) },
             timeoutMs = 10_000
-        ) as? JsonObject ?: return null
-        val arr = result["forecast"] as? JsonArray ?: return null
+        ) as? JsonObject
+        if (result == null) {
+            Timber.i("Weather forecast: no result (client=${client != null}) $entityId")
+            return null
+        }
+        val arr = result["forecast"] as? JsonArray
+        if (arr == null) {
+            Timber.w("Weather forecast: unexpected result ${result.toString().take(300)}")
+            return null
+        }
+        Timber.d("Weather forecast: ${arr.size} entries")
         return arr.mapNotNull { element ->
             val o = element as? JsonObject ?: return@mapNotNull null
             val datetime = o.str("datetime") ?: return@mapNotNull null
