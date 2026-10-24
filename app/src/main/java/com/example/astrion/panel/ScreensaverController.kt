@@ -84,6 +84,14 @@ class ScreensaverController @Inject constructor(
     @Volatile
     private var systemTimeoutWriteOk = false
 
+    /** True when the OS accepted our STAY_ON_WHILE_PLUGGED_IN write. */
+    @Volatile
+    private var stayOnWriteOk = false
+
+    /** 零余光路径可用且当前不被 STAY_ON 顶回。 */
+    @Volatile
+    private var effectiveSystemOk = false
+
     /** System brightness before the screen-off dim, restored on wake. */
     private var previousBrightness = 0
 
@@ -157,9 +165,9 @@ class ScreensaverController @Inject constructor(
         val idleMs = SystemClock.elapsedRealtime() - lastInteractionRealtimeMs
         val idleReached = timeout > 0 && idleMs >= timeout * 1000L
 
-        // 系统息屏路径：写好 SCREEN_OFF_TIMEOUT 后由系统关背光（真灭屏，无余光），
+        // 系统息屏路径：写好 SCREEN_OFF_TIMEOUT + 清除插电常驻后由系统关背光，
         // 这里只负责充电屏保模式的时钟 overlay 以及旧路径兜底。
-        if (systemTimeoutWriteOk) {
+        if (effectiveSystemOk) {
             if (!idleReached) {
                 if (_active.value) _active.value = false
                 endScreenOff()
@@ -206,13 +214,15 @@ class ScreensaverController @Inject constructor(
 
     /**
      * Mirrors the settings into `Settings.System.SCREEN_OFF_TIMEOUT` — the
-     * original mechanism for the true display-off (zero backlight). 息屏常亮
-     * (charging+屏保) and user's never both write the max value.
+     * original mechanism for the true display-off (zero backlight). The panel
+     * is always docked, so the ROM's `STAY_ON_WHILE_PLUGGED_IN`(=7, which
+     * overrides the timeout while plugged) must be cleared for the display to
+     * sleep: 息屏常亮 (charging+屏保)/never keep it 7, otherwise 0.
      */
     private fun applySystemTimeout() {
+        val stayOn = (chargingNow && !chargingScreenOff) || timeoutSeconds <= 0
         val millis = when {
-            chargingNow && !chargingScreenOff -> NEVER_TIMEOUT_MS
-            timeoutSeconds <= 0 -> NEVER_TIMEOUT_MS
+            stayOn -> NEVER_TIMEOUT_MS
             else -> timeoutSeconds * 1000L
         }
         val ok = runCatching {
@@ -229,6 +239,23 @@ class ScreensaverController @Inject constructor(
             Timber.d("System screen-off timeout write: ${if (ok) "OK" else "denied"}")
         }
         systemTimeoutWriteOk = ok
+        val stayOk = runCatching {
+            Settings.Global.putInt(
+                context.contentResolver,
+                Settings.Global.STAY_ON_WHILE_PLUGGED_IN,
+                if (stayOn) STAY_ON_ALL_PLUGGED else 0
+            )
+            Settings.Global.getInt(
+                context.contentResolver, Settings.Global.STAY_ON_WHILE_PLUGGED_IN
+            ) == if (stayOn) STAY_ON_ALL_PLUGGED else 0
+        }.getOrDefault(false)
+        if (stayOk != stayOnWriteOk) {
+            Timber.d("STAY_ON_WHILE_PLUGGED write=$stayOk (stayOn=$stayOn)")
+        }
+        stayOnWriteOk = stayOk
+
+        // 系统超时路径只有在超时写入被接受且 STAY_ON 没有顶回去时才可靠。
+        effectiveSystemOk = ok && (!stayOn || stayOk)
     }
 
     /** Battery monitor so charging state also updates while no UI is composed. */
@@ -304,5 +331,8 @@ class ScreensaverController @Inject constructor(
 
         /** Original 息屏常亮/不熄屏 value: system timeout = Int.MAX ms. */
         const val NEVER_TIMEOUT_MS = Int.MAX_VALUE - 1L
+
+        /** Original STAY_ON_WHILE_PLUGGED_IN value: AC|USB|Wireless. */
+        const val STAY_ON_ALL_PLUGGED = 7
     }
 }
