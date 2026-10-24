@@ -429,20 +429,24 @@ class HaPanelBridge @Inject constructor(
      * 拉取天气实体的预报（HA 标准 `weather/get_forecasts`）。
      * 集成或实体不支持时返回 null，UI 隐藏预报区。
      */
-    suspend fun getWeatherForecast(entityId: String): List<com.example.astrion.ha.HaWeatherForecast>? {
-        // HA WS 无 "weather/get_forecasts" 命令类型；走通用 call_service 并要求返回响应，
+    suspend fun getWeatherForecast(
+        entityId: String,
+        type: String = "daily"
+    ): List<com.example.astrion.ha.HaWeatherForecast>? {
+        // 原版走 call_service(weather.get_forecasts) 并带 {"type": "hourly"/"daily"}；
         // 结果嵌套在 result.service_call.response.<entity_id>.forecast。
-        val params = buildJsonObject {
+        // 部分天气平台不支持 type 参数（会报 unknown parameter），失败则去掉 type 重试。
+        fun params(withType: Boolean) = buildJsonObject {
             put("domain", "weather")
             put("service", "get_forecasts")
             put("target", buildJsonObject { put("entity_id", buildJsonArray { add(entityId) }) })
             put("return_response", true)
+            if (withType) put("data", buildJsonObject { put("type", type) })
         }
-        val result = client?.sendCommand(
-            "call_service",
-            params,
-            timeoutMs = 15_000
-        ) as? JsonObject
+        var result = client?.sendCommand("call_service", params(true), timeoutMs = 15_000) as? JsonObject
+        if (result == null) {
+            result = client?.sendCommand("call_service", params(false), timeoutMs = 15_000) as? JsonObject
+        }
         if (result == null) {
             Timber.i("Weather forecast: no result (client=${client != null}) $entityId")
             return null
@@ -456,7 +460,7 @@ class HaPanelBridge @Inject constructor(
             Timber.w("Weather forecast: unexpected result ${result.toString().take(300)}")
             return null
         }
-        Timber.d("Weather forecast: ${arr.size} entries")
+        Timber.d("Weather forecast($type): ${arr.size} entries")
         return arr.mapNotNull { element ->
             val o = element as? JsonObject ?: return@mapNotNull null
             val datetime = o.str("datetime") ?: return@mapNotNull null

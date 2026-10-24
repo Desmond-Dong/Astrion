@@ -302,8 +302,8 @@ class DeviceDetailViewModel @Inject constructor(
     val haStates = haStatesStore.states
 
     /** 天气预报（weather/get_forecasts），不支持时返回 null。 */
-    suspend fun loadForecast(entityId: String): List<com.example.astrion.ha.HaWeatherForecast>? =
-        panelBridge.getWeatherForecast(entityId)
+    suspend fun loadForecast(entityId: String, type: String = "daily"): List<com.example.astrion.ha.HaWeatherForecast>? =
+        panelBridge.getWeatherForecast(entityId, type)
 
     /** 物理键长按自动重复（原版 200ms 间隔），松手 cancel 停止。 */
     private var holdJob: Job? = null
@@ -2799,7 +2799,10 @@ private fun SwitchSceneContent(
     }
 }
 
-// ── Weather (§3.10.4 ⑳) — 原版天气卡片：实况大字 + 详情 + 预报 ──────────
+// ── Weather (§3.10.4 ⑳) — 原版 activity_weather 还原 ────────────────────
+// 头部：设备名 20sp / 当前温度 72sp / 天气文本 17sp hint / 当日低~高 16sp。
+// 两张圆角卡片（#2C2C2E r12）：今天(小时横排 90dp 区) 与 7天预报(纵排)。
+// 页面 #1A1A1A、分隔线 #3B3B3B，均为原版 resources.arsc 中的实际值。
 
 @Composable
 private fun WeatherContent(
@@ -2809,131 +2812,150 @@ private fun WeatherContent(
 ) {
     val entityId = card.primaryEntity?.entityId
     val condition = stateOf(card, haStates) ?: "--"
-    val unit = stateOf(card, haStates, "temperature_unit") ?: "°C"
     val temperature = stateOf(card, haStates, "temperature")?.toDoubleOrNull()?.let { "%.0f".format(it) }
-    val humidity = stateOf(card, haStates, "humidity")
-    val windSpeed = stateOf(card, haStates, "wind_speed")
-    val windSpeedUnit = stateOf(card, haStates, "wind_speed_unit") ?: "km/h"
-    val pressure = stateOf(card, haStates, "pressure")
-    val pressureUnit = stateOf(card, haStates, "pressure_unit") ?: "hPa"
-    val windBearing = stateOf(card, haStates, "wind_bearing")
 
-    // 预报：走 HA 标准 weather/get_forecasts，不支持时整块隐藏
-    var forecast by remember { mutableStateOf<List<com.example.astrion.ha.HaWeatherForecast>?>(null) }
+    // 预报：今天(小时) / 7天(每日)，走 call_service(weather.get_forecasts)
+    var hourly by remember { mutableStateOf<List<com.example.astrion.ha.HaWeatherForecast>?>(null) }
+    var daily by remember { mutableStateOf<List<com.example.astrion.ha.HaWeatherForecast>?>(null) }
     LaunchedEffect(entityId) {
         if (entityId != null) {
-            forecast = runCatching { viewModel.loadForecast(entityId) }.getOrNull()
+            daily = runCatching { viewModel.loadForecast(entityId, "daily") }.getOrNull()
+            hourly = runCatching { viewModel.loadForecast(entityId, "hourly") }.getOrNull()
         }
     }
+
+    val pageBg = Color(0xFF1A1A1A)
+    val cardBg = Color(0xFF2C2C2E)
+    val dividerColor = Color(0xFF3B3B3B)
+    val first = daily?.firstOrNull()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .background(pageBg)
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 56.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(4.dp))
 
-        // 原版天气实况：大 emoji + 大字温度
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = weatherEmoji(condition), fontSize = 60.sp)
-            Spacer(Modifier.width(18.dp))
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    text = temperature ?: "--",
-                    autoSize = TextAutoSize.StepBased(
-                        minFontSize = 30.sp, maxFontSize = 64.sp, stepSize = 2.sp
-                    ),
-                    maxLines = 1,
-                    softWrap = false,
-                    fontWeight = FontWeight.Bold,
-                    color = RemoteColors.onSurface
-                )
-                Text(
-                    text = unit,
-                    fontSize = 20.sp,
-                    color = RemoteColors.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
-        }
+        // 设备名（原版 tvCityName）
         Text(
-            text = weatherLabel(condition),
+            text = card.displayName(haStates),
             fontSize = 20.sp,
-            color = RemoteColors.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp)
+            fontWeight = FontWeight.Medium,
+            color = RemoteColors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 20.dp)
         )
 
-        Spacer(Modifier.height(26.dp))
+        // 当前温度 72sp（原版 tvCurrentTemp，纯数字无 emoji）
+        Text(
+            text = (temperature ?: "--") + "°",
+            fontSize = 72.sp,
+            lineHeight = 76.sp,
+            color = RemoteColors.onSurface
+        )
 
-        // 实况详情：湿度 / 风速 / 气压 / 风向
+        // 天气文本（原版 tvConditionText）
+        Text(
+            text = weatherLabel(condition),
+            fontSize = 17.sp,
+            color = RemoteColors.hintText,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+
+        // 当日 低 ~ 高（标签 hint、数值白，原版头部横排）
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 4.dp)
         ) {
-            WeatherInfoTile("湿度", humidity?.let { "$it%" })
-            WeatherInfoTile("风速", windSpeed?.let { "$it $windSpeedUnit" })
-            WeatherInfoTile("气压", pressure?.let { "$it $pressureUnit" })
-            WeatherInfoTile("风向", windBearingLabel(windBearing))
+            Text(text = "低 ", fontSize = 16.sp, color = RemoteColors.hintText)
+            Text(
+                text = (first?.templow?.roundToInt()?.toString() ?: "--") + "°",
+                fontSize = 16.sp, color = RemoteColors.onSurface
+            )
+            Text(
+                text = " ~ ",
+                fontSize = 16.sp, color = RemoteColors.hintText,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+            Text(text = "高 ", fontSize = 16.sp, color = RemoteColors.hintText)
+            Text(
+                text = (first?.temperature?.roundToInt()?.toString() ?: temperature ?: "--") + "°",
+                fontSize = 16.sp, color = RemoteColors.onSurface
+            )
         }
 
-        // 预报
-        forecast?.takeIf { it.isNotEmpty() }?.let { list ->
-            Text(
-                text = "预报",
-                color = RemoteColors.onSurfaceVariant,
-                fontSize = 14.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 28.dp, start = 20.dp)
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                list.take(10).forEach { item ->
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = RemoteColors.surfaceVariant,
-                        modifier = Modifier.padding(vertical = 2.dp)
+        // 今天（小时预报）卡片
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = 4.dp)
+                .background(cardBg, RoundedCornerShape(12.dp))
+                .padding(bottom = 12.dp)
+        ) {
+            Column {
+                Text(
+                    text = "今天",
+                    fontSize = 16.sp,
+                    color = RemoteColors.onSurface,
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .padding(horizontal = 16.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .padding(horizontal = 16.dp)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(dividerColor)
+                )
+                val hours = hourly
+                if (hours.isNullOrEmpty()) {
+                    Text(
+                        text = "暂无小时预报",
+                        fontSize = 14.sp,
+                        color = RemoteColors.hintText,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(90.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(90.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-                        ) {
-                            val daily = item.templow != null
-                            Text(
-                                text = forecastTimeLabel(item.datetime, daily),
-                                color = RemoteColors.onSurfaceVariant,
-                                fontSize = 12.sp
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(text = weatherEmoji(item.condition), fontSize = 26.sp)
-                            Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        hours.forEach { item ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .padding(horizontal = 12.dp)
+                                    .fillMaxHeight()
+                                    .wrapContentHeight(Alignment.CenterVertically)
+                            ) {
                                 Text(
-                                    text = item.temperature?.roundToInt()?.toString()?.plus("°")
-                                        ?: "--",
-                                    color = RemoteColors.onSurface,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = forecastTimeLabel(item.datetime, false),
+                                    fontSize = 13.sp,
+                                    color = RemoteColors.hintText
                                 )
-                                if (daily) {
-                                    Text(
-                                        text = " ${item.templow?.roundToInt()?.toString()?.plus("°") ?: ""}",
-                                        color = RemoteColors.onSurfaceVariant,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                            item.precipitationProbability?.let { pp ->
                                 Text(
-                                    text = "💧${pp.roundToInt()}%",
-                                    color = RemoteColors.onSurfaceVariant,
-                                    fontSize = 10.sp
+                                    text = weatherEmoji(item.condition),
+                                    fontSize = 22.sp,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                                Text(
+                                    text = (item.temperature?.roundToInt()?.toString() ?: "--") + "°",
+                                    fontSize = 15.sp,
+                                    color = RemoteColors.onSurface
                                 )
                             }
                         }
@@ -2941,24 +2963,75 @@ private fun WeatherContent(
                 }
             }
         }
-    }
-}
 
-@Composable
-private fun WeatherInfoTile(label: String, value: String?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value?.takeIf { it.isNotBlank() } ?: "--",
-            color = RemoteColors.onSurface,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = label,
-            color = RemoteColors.onSurfaceVariant,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 2.dp)
-        )
+        // 7天预报卡片
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = 12.dp, bottom = 20.dp)
+                .background(cardBg, RoundedCornerShape(12.dp))
+                .padding(bottom = 8.dp)
+        ) {
+            Column {
+                Text(
+                    text = "7天预报",
+                    fontSize = 16.sp,
+                    color = RemoteColors.onSurface,
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .padding(horizontal = 16.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .padding(horizontal = 16.dp)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(dividerColor)
+                )
+                val days = daily
+                if (days.isNullOrEmpty()) {
+                    Text(
+                        text = "暂无7天预报",
+                        fontSize = 14.sp,
+                        color = RemoteColors.hintText,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
+                    )
+                } else {
+                    Column(Modifier.padding(top = 4.dp)) {
+                        days.take(7).forEach { item ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                            ) {
+                                Text(
+                                    text = forecastTimeLabel(item.datetime, true),
+                                    fontSize = 15.sp,
+                                    color = RemoteColors.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = weatherEmoji(item.condition), fontSize = 22.sp)
+                                Text(
+                                    text = (item.templow?.roundToInt()?.toString() ?: "--") + "°/" +
+                                        (item.temperature?.roundToInt()?.toString() ?: "--") + "°",
+                                    fontSize = 15.sp,
+                                    color = RemoteColors.hintText,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
