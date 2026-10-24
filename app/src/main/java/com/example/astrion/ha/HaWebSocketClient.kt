@@ -259,7 +259,11 @@ class HaWebSocketClient(
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
                 "result" -> {
                     val id = obj["id"]?.jsonPrimitive?.intOrNull ?: continue
-                    pendingResults.remove(id)?.complete(obj["result"])
+                    val success = obj["success"]?.jsonPrimitive?.booleanOrNull ?: true
+                    if (!success) {
+                        Timber.w("HA command $id failed: ${obj["error"].toString().take(300)}")
+                    }
+                    pendingResults.remove(id)?.complete(if (success) obj["result"] else null)
                 }
 
                 "event" -> {
