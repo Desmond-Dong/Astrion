@@ -457,8 +457,8 @@ class HaPanelBridge @Inject constructor(
         val call = result["service_call"] as? JsonObject
         val response = call?.get("response") as? JsonObject
             ?: result["response"] as? JsonObject
-        val arr = response?.get(entityId) as? JsonObject
-            ?.get("forecast") as? JsonArray
+        val item = response?.get(entityId) as? JsonObject
+        val arr = item?.get("forecast") as? JsonArray
         if (arr == null) {
             Timber.w("Weather forecast: unexpected result " + result.toString().take(300))
             return null
