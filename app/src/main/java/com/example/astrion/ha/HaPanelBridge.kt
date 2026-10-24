@@ -430,16 +430,28 @@ class HaPanelBridge @Inject constructor(
      * 集成或实体不支持时返回 null，UI 隐藏预报区。
      */
     suspend fun getWeatherForecast(entityId: String): List<com.example.astrion.ha.HaWeatherForecast>? {
+        // HA WS 无 "weather/get_forecasts" 命令类型；走通用 call_service 并要求返回响应，
+        // 结果嵌套在 result.service_call.response.<entity_id>.forecast。
+        val params = buildJsonObject {
+            put("domain", "weather")
+            put("service", "get_forecasts")
+            put("target", buildJsonObject { put("entity_id", buildJsonArray { add(entityId) }) })
+            put("return_response", true)
+        }
         val result = client?.sendCommand(
-            "weather/get_forecasts",
-            buildJsonObject { put("entity_id", entityId) },
-            timeoutMs = 10_000
+            "call_service",
+            params,
+            timeoutMs = 15_000
         ) as? JsonObject
         if (result == null) {
             Timber.i("Weather forecast: no result (client=${client != null}) $entityId")
             return null
         }
-        val arr = result["forecast"] as? JsonArray
+        val call = result["service_call"] as? JsonObject
+        val response = call?.get("response") as? JsonObject
+            ?: result["response"] as? JsonObject
+        val arr = response?.get(entityId) as? JsonObject
+            ?.get("forecast") as? JsonArray
         if (arr == null) {
             Timber.w("Weather forecast: unexpected result ${result.toString().take(300)}")
             return null
