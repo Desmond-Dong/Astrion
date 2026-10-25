@@ -6,6 +6,8 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
@@ -61,6 +63,7 @@ import com.example.astrion.ha.HaPanelBridge
 import com.example.astrion.panel.PanelCard
 import com.example.astrion.panel.PanelCardTypes
 import com.example.astrion.panel.PanelLayout
+import com.example.astrion.panel.PanelRoom
 import com.example.astrion.services.ActivityNavigator
 import com.example.astrion.services.HomeAssistantStatesStore
 import com.example.astrion.ui.DeviceDetail
@@ -270,11 +273,14 @@ fun PanelHomeScreen(
     val context = LocalContext.current
 
     val rooms = remember(layout) { layout.rooms }
-    // 官方原版行为：所有设备同页显示（不分房间分页），一页纵向滚动网格
-    val allCards = remember(rooms) { rooms.flatMap { it.cards } }
 
     val connected = connectionState == HaConnectionState.Connected
     var quickSettingsOpen by remember { mutableStateOf(false) }
+
+    // 原版 home_activity：房间分页 ViewPager + 底部页点 + 房间名三角下拉
+    val pagerState = rememberPagerState(pageCount = { rooms.size })
+    val scope = rememberCoroutineScope()
+    var roomMenuOpen by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -287,7 +293,12 @@ fun PanelHomeScreen(
             TimeTopBar(connected = connected)
             SwipeHandle()
             if (!connected) WifiHintRow()
-            HomeTitleBar()
+            // 原版 rlViewLayout：房间名 23sp + 三角下拉（点击弹房间选择）
+            RoomSelectorBar(
+                rooms = rooms,
+                currentRoom = rooms.getOrNull(pagerState.currentPage),
+                onOpenMenu = { roomMenuOpen = true }
+            )
 
             if (rooms.isEmpty()) {
                 val pairingUrl = if (!connected) {
@@ -298,16 +309,44 @@ fun PanelHomeScreen(
                 }
                 EmptyLayoutHint(pairingUrl = pairingUrl, onRefresh = { viewModel.refreshDevices() })
             } else {
-                RoomDeviceList(
-                    cards = allCards,
-                    haStates = haStates,
-                    onOpenCard = { card -> navController.navigate(DeviceDetail(card.cardId)) },
-                    onTogglePower = { card -> viewModel.toggleCardPower(card) },
-                    onExecuteScene = { card, done -> viewModel.executeScene(card, done) },
-                    onAllOff = { card, type -> viewModel.allOff(card, type) },
-                    modifier = Modifier.weight(1f)
-                )
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f),
+                    beyondViewportPageCount = 1
+                ) { page ->
+                    val room = rooms.getOrNull(page)
+                    RoomDeviceList(
+                        cards = room?.cards ?: emptyList(),
+                        haStates = haStates,
+                        onOpenCard = { card -> navController.navigate(DeviceDetail(card.cardId)) },
+                        onTogglePower = { card -> viewModel.toggleCardPower(card) },
+                        onExecuteScene = { card, done -> viewModel.executeScene(card, done) },
+                        onAllOff = { card, type -> viewModel.allOff(card, type) },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                // 原版 paginationIndicator：底部页点（白实心=选中 / 白圈黑心）
+                if (rooms.size > 1) {
+                    RoomPageIndicator(
+                        count = rooms.size,
+                        current = pagerState.currentPage,
+                        onDotClick = { idx -> scope.launch { pagerState.animateScrollToPage(idx) } }
+                    )
+                }
             }
+        }
+
+        // 原版 popup_room_select_view：房间选择弹窗
+        if (roomMenuOpen && rooms.isNotEmpty()) {
+            RoomSelectPopup(
+                rooms = rooms,
+                currentRoom = rooms.getOrNull(pagerState.currentPage),
+                onRoomSelected = { idx ->
+                    roomMenuOpen = false
+                    scope.launch { pagerState.animateScrollToPage(idx) }
+                },
+                onDismiss = { roomMenuOpen = false }
+            )
         }
 
         // 快捷面板画在内容之上，触摸不会被首页拦截
@@ -453,23 +492,154 @@ private fun WifiHintRow() {
     }
 }
 
-/** 原生居中标题条 rlViewLayout(30dp) + 原版字号 23sp #E6CCCBCB。
- *  官方原版为房间选择器；本项目所有设备同页显示，固定标题"所有设备"。 */
+/** 原版 rlViewLayout(30dp)：房间名 23sp #CCCBCB + 右侧三角(40×28)，点击弹房间选择。 */
 @Composable
-private fun HomeTitleBar() {
-    Box(
+private fun RoomSelectorBar(
+    rooms: List<PanelRoom>,
+    currentRoom: PanelRoom?,
+    onOpenMenu: () -> Unit,
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(30.dp),
-        contentAlignment = Alignment.Center
+            .height(30.dp)
+            .clickable(onClick = onOpenMenu),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "所有设备",
-            color = RemoteColors.roomName,
+            text = currentRoom?.title ?: "所有设备",
+            color = Color(0xFFCCCBCB),
             fontSize = 23.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        // 原版 imgTriangle 40×28dp（右侧 3dp）
+        Box(
+            modifier = Modifier
+                .padding(start = 3.dp)
+                .size(width = 40.dp, height = 28.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            TriangleIcon(color = Color(0xFFCCCBCB), width = 14.dp, height = 8.dp)
+        }
+    }
+}
+
+/** 向下三角（原版 imgTriangle）。 */
+@Composable
+private fun TriangleIcon(color: Color, width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp) {
+    androidx.compose.foundation.Canvas(modifier = Modifier.size(width = width, height = height)) {
+        val w = size.width
+        val h = size.height
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(0f, 0f)
+            lineTo(w, 0f)
+            lineTo(w / 2f, h)
+            close()
+        }
+        drawPath(path, color)
+    }
+}
+
+/** 原版 popup_room_select_view：圆角 8 #17171A 列表，item 60dp/名 20sp 白/勾选/分隔线 #2F2F36。 */
+@Composable
+private fun RoomSelectPopup(
+    rooms: List<PanelRoom>,
+    currentRoom: PanelRoom?,
+    onRoomSelected: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(onClick = onDismiss)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFF17171A),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(0.92f)
+                .clickable(enabled = false) {}
+        ) {
+            Column {
+                rooms.forEachIndexed { idx, room ->
+                    val selected = room == currentRoom
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .clickable { onRoomSelected(idx) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = room.title,
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 40.dp)
+                        )
+                        if (selected) {
+                            Text(
+                                text = "✓",
+                                color = RemoteColors.accent,
+                                fontSize = 20.sp,
+                                modifier = Modifier.padding(end = 20.dp)
+                            )
+                        }
+                    }
+                    if (idx != rooms.lastIndex) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 15.dp)
+                                .height(1.dp)
+                                .background(Color(0xFF2F2F36))
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 原版 paginationIndicator：20dp 高底部页点；选中白实心，未选中白圈黑心。 */
+@Composable
+private fun RoomPageIndicator(
+    count: Int,
+    current: Int,
+    onDotClick: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(20.dp)
+            .padding(top = 4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(count) { idx ->
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .then(
+                        if (idx == current) {
+                            Modifier.background(Color.White, CircleShape)
+                        } else {
+                            Modifier
+                                .border(1.dp, Color.White, CircleShape)
+                                .background(Color.Black, CircleShape)
+                        }
+                    )
+                    .clickable { onDotClick(idx) }
+            )
+            if (idx != count - 1) Spacer(Modifier.width(4.dp))
+        }
     }
 }
 
@@ -787,19 +957,20 @@ private fun DeviceCard(
         PanelCardTypes.FAN, PanelCardTypes.TV, PanelCardTypes.MEDIA_PLAYER
     )
 
-    // 原版 TV 焦点导航：物理键上下在设备卡间移动焦点，焦点卡画 2px 描边
-    // （device_button_focuses_onclick_border，CardAppearanceHelper）
+    // 原版 TV 焦点导航：物理键上下在设备卡间移动焦点，焦点卡画 2px 金色描边
+    // （item_focuses_no_onclick_border #D2AC88，CardAppearanceHelper）
     var isFocused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(155.dp)
+            .background(Color(0xFF151514), RoundedCornerShape(8.dp))
             .onFocusChanged { isFocused = it.isFocused }
             .let {
                 if (isFocused) it.border(
                     width = 2.dp,
-                    color = Color.White.copy(alpha = 0.8f),
-                    shape = RoundedCornerShape(12.dp)
+                    color = Color(0xFFD2AC88),
+                    shape = RoundedCornerShape(8.dp)
                 ) else it
             }
             .clickable(onClick = onClick)
