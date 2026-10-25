@@ -959,13 +959,16 @@ private fun DeviceCard(
     )
 
     // 原版 TV 焦点导航：物理键上下在设备卡间移动焦点，焦点卡画 2px 金色描边
-    // （item_focuses_no_onclick_border #D2AC88，CardAppearanceHelper）
+    // （item_focuses_no_onclick_border #D2AC88，CardAppearanceHelper）。
+    // 原版 updateOnOffBackground：关=universal_item_background_unselected #151514，
+    // 开=item_device_on_background #32281d（暖棕）。
     var isFocused by remember { mutableStateOf(false) }
+    val cardBg = if (isOn) Color(0xFF32281D) else Color(0xFF151514)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(155.dp)
-            .background(Color(0xFF151514), RoundedCornerShape(8.dp))
+            .background(cardBg, RoundedCornerShape(8.dp))
             .onFocusChanged { isFocused = it.isFocused }
             .let {
                 if (isFocused) it.border(
