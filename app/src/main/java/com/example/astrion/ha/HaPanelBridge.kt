@@ -33,6 +33,12 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,6 +72,12 @@ class HaPanelBridge @Inject constructor(
     private val otaUpdateManager: OtaUpdateManager,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /** REST client for calls the WS channel cannot make (weather forecasts). */
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(java.time.Duration.ofSeconds(5))
+        .readTimeout(java.time.Duration.ofSeconds(15))
+        .build()
 
     private val _state = MutableStateFlow<HaConnectionState>(HaConnectionState.Disconnected)
     val state: StateFlow<HaConnectionState> = _state.asStateFlow()
@@ -433,34 +445,42 @@ class HaPanelBridge @Inject constructor(
         entityId: String,
         type: String = "daily"
     ): List<com.example.astrion.ha.HaWeatherForecast>? {
-        // 原版走 call_service(weather.get_forecasts) 并带 {"type": "hourly"/"daily"}；
-        // 结果嵌套在 result.service_call.response.<entity_id>.forecast。
-        // 部分天气平台不支持 type 参数（会报 unknown parameter），失败则去掉 type 重试。
-        fun params(withType: Boolean): JsonObject {
-            val data = buildJsonObject {
-                put("domain", "weather")
-                put("service", "get_forecasts")
-                put("target", buildJsonObject { put("entity_id", buildJsonArray { add(entityId) }) })
-                put("return_response", true)
-                if (withType) put("data", buildJsonObject { put("type", type) })
-            }
-            return data
-        }
-        var result = client?.sendCommand("call_service", params(true), timeoutMs = 15_000) as? JsonObject
-        if (result == null) {
-            result = client?.sendCommand("call_service", params(false), timeoutMs = 15_000) as? JsonObject
-        }
-        if (result == null) {
-            Timber.i("Weather forecast: no result (client=" + (client != null) + ") " + entityId)
-            return null
-        }
-        val call = result["service_call"] as? JsonObject
-        val response = call?.get("response") as? JsonObject
-            ?: result["response"] as? JsonObject
-        val item = response?.get(entityId) as? JsonObject
-        val arr = item?.get("forecast") as? JsonArray
+        // 原版等价：call weather.get_forecasts（type=daily/hourly）。本 HA 版本的
+        // websocket call_service 通道对该服务 schema 校验异常（实测全拒），改走
+        // 等价的 REST `POST /api/services/weather/get_forecasts?return_response`
+        // （响应：service_response.<entity_id>.forecast[]）。
+        val settings = connectionSettingsStore.get()
+        val scheme = if (settings.useSsl) "https" else "http"
+        val url = "$scheme://${settings.host}:${settings.port}" +
+            "/api/services/weather/get_forecasts?return_response"
+        val bodyJson = buildJsonObject {
+            put("entity_id", entityId)
+            put("type", type)
+        }.toString()
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer ${settings.token}")
+                    .post(
+                        bodyJson.toRequestBody("application/json".toMediaType())
+                    )
+                    .build()
+                httpClient.newCall(request).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        Timber.w("Weather forecast HTTP ${resp.code}: ${text.take(200)}")
+                        return@use null
+                    }
+                    json.parseToJsonElement(text).jsonObject
+                }
+            }.onFailure { Timber.w(it, "Weather forecast request failed") }.getOrNull()
+        } ?: return null
+        val response = result["service_response"] as? JsonObject
+        val arr = response?.get(entityId) as? JsonObject
+            ?.get("forecast") as? JsonArray
         if (arr == null) {
-            Timber.w("Weather forecast: unexpected result " + result.toString().take(300))
+            Timber.w("Weather forecast: unexpected result ${result.toString().take(300)}")
             return null
         }
         Timber.d("Weather forecast " + type + " entries=" + arr.size)
