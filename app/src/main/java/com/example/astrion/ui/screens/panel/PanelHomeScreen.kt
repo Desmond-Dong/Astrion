@@ -1078,14 +1078,15 @@ private fun DeviceCard(
             )
         }
         if (bottomInfo != null && !isOffline) {
-            // 原版底部信息行：30dp 高、marginBottom 8 / marginEnd 15、10sp
+            // 原版底部信息行：30dp 高、居中横排（gravity center）、
+            // marginBottom 8 / marginEnd 15、10sp #BFBDBD
             Text(
                 text = bottomInfo,
                 color = Color(0xFFBFBDBD),
                 fontSize = 10.sp,
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(bottom = 8.dp, end = 15.dp)
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 8.dp)
             )
         }
     }
