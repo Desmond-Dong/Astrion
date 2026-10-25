@@ -32,6 +32,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -477,8 +478,8 @@ class HaPanelBridge @Inject constructor(
             }.onFailure { Timber.w(it, "Weather forecast request failed") }.getOrNull()
         } ?: return null
         val response = result["service_response"] as? JsonObject
-        val arr = response?.get(entityId) as? JsonObject
-            ?.get("forecast") as? JsonArray
+        val entity = response?.get(entityId) as? JsonObject
+        val arr = entity?.get("forecast") as? JsonArray
         if (arr == null) {
             Timber.w("Weather forecast: unexpected result ${result.toString().take(300)}")
             return null
